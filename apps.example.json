@@ -18,7 +18,8 @@
         "lat": "40.6413",
         "lng": "-73.7781",
         "radius_nm": "3"
-      }
+      },
+      "enabled": false
     },
     {
       "id": "oura",
