@@ -1,7 +1,8 @@
 """
 Stock watch for Tidbyt.
 Cycles through a list of tickers. Each one shows its price, the change since
-the previous close and an intraday sparkline that draws itself in. The chart
+the previous close and an intraday sparkline with a
+blinking dot on the latest price. The chart
 spans the whole trading session, so the line grows across the day, and a
 dotted line marks the previous close.
 
@@ -26,7 +27,6 @@ URLS = [
 HEADERS = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
 
 DELAY_MS = 100
-DRAW_FRAMES = 12  # frames to draw the line in
 CHART_TOP = 15
 CHART_H = 17  # rows 15..31
 WIDTH = 64
@@ -202,19 +202,17 @@ def ticker_frames(symbol, label, frames):
     ])
 
     base, cols = chart_layers(q, color, dim)
-    out = []
-    for f in range(frames):
-        shown = len(cols) if f >= DRAW_FRAMES else len(cols) * (f + 1) // DRAW_FRAMES
-        layers = [top] + base
-        for _, _, ws in cols[:shown]:
-            layers.extend([w for w in ws if w != None])
+    layers = [top] + base
+    for _, _, ws in cols:
+        layers.extend([w for w in ws if w != None])
+    still = render.Stack(children = layers)
 
-        # Pulse the latest point once the line is drawn.
-        if shown == len(cols) and cols and (f // 5) % 2 == 0:
-            x, y, _ = cols[-1]
-            layers.append(column(x, y, 1, "#ffffff"))
-        out.append(render.Stack(children = layers))
-    return out
+    # Pulse the latest point.
+    lit = still
+    if cols:
+        x, y, _ = cols[-1]
+        lit = render.Stack(children = layers + [column(x, y, 1, "#ffffff")])
+    return [lit if (f // 5) % 2 == 0 else still for f in range(frames)]
 
 def parse_tickers(s):
     out = []
@@ -232,7 +230,7 @@ def parse_tickers(s):
 def main(config):
     tickers = parse_tickers(config.get("tickers", DEFAULT_TICKERS)) or parse_tickers(DEFAULT_TICKERS)
     seconds = int(config.get("seconds", "5"))
-    frames = max(DRAW_FRAMES + 5, seconds * 1000 // DELAY_MS)
+    frames = max(10, seconds * 1000 // DELAY_MS)
 
     all_frames = []
     for sym, label in tickers:
