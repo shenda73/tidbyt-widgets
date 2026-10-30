@@ -29,18 +29,20 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # The real apps.json holds personal settings (location), so it lives in a
-      # repository secret. Without it (forks, PRs), fall back to the example.
+      # The widget list is apps.example.json. Personal settings (location) live
+      # in the APPS_JSON secret and are laid over it by widget id. Without the
+      # secret (forks, PRs), the example values are used as they are.
       - name: Prepare apps.json
         env:
           APPS_JSON: ${{ secrets.APPS_JSON }}
         run: |
           if [ -n "$APPS_JSON" ]; then
-            printf '%s' "$APPS_JSON" > apps.json
+            printf '%s' "$APPS_JSON" > /tmp/personal.json
+            python3 scripts/merge_apps.py apps.example.json /tmp/personal.json > apps.json
           else
-            cp apps.example.json apps.json
+            python3 scripts/merge_apps.py apps.example.json > apps.json
           fi
-          python3 -m json.tool apps.json > /dev/null
+          python3 -c 'import json; print([a["id"] for a in json.load(open("apps.json"))["apps"]])'
 
       - name: Build image
         run: docker build -f lambda/Dockerfile -t widgets:${{ github.sha }} .

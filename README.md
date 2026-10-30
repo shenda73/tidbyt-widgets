@@ -38,7 +38,7 @@ that widget's slot in the rotation without interrupting what's on screen.
 
 ```
 apps/*.star          one Pixlet app per widget
-apps.example.json    sample config; copy to apps.json (not committed)
+apps.example.json    widget list that gets deployed (personal values come from APPS_JSON)
 lambda/              Lambda handler and Dockerfile (Python + Pixlet, arm64)
 deploy.sh            one-time AWS setup and infrastructure changes
 .github/workflows/   build, smoke-test and deploy on every push to main
@@ -59,7 +59,7 @@ deploy.sh            one-time AWS setup and infrastructure changes
 ## Add a widget
 
 1. Put `my_widget.star` in `apps/` and preview it with `pixlet serve apps/my_widget.star`.
-2. Add it to your `apps.json` (and to `apps.example.json` with sample values):
+2. Add it to `apps.example.json`, which is the widget list that gets deployed:
    ```json
    {"id": "mywidget", "file": "my_widget.star", "every": 30, "config": {}}
    ```
@@ -68,8 +68,10 @@ deploy.sh            one-time AWS setup and infrastructure changes
      `every` of 10 or less refresh on each 10-minute run.
    - `config`: values passed to the app (`config.get("key")`)
    - `"enabled": false` skips it
-3. If you changed `apps.json`, update the `APPS_JSON` secret:
-   `gh secret set APPS_JSON < apps.json`
+3. Personal values (your location) stay out of the repo, in the `APPS_JSON` secret.
+   On deploy, each widget in it is laid over the one with the same id in
+   `apps.example.json` (config merged key by key, see `scripts/merge_apps.py`). Only
+   update it if the new widget needs a private value: `gh secret set APPS_JSON < apps.json`
 4. Push to `main`.
 
 ## Set it up yourself
