@@ -30,6 +30,7 @@ DELAY_MS = 100
 CHART_TOP = 15
 CHART_H = 17  # rows 15..31
 WIDTH = 64
+BAR_SECS = 300  # 5-minute bars
 
 UP, UP_DIM = "#2fe07a", "#0c3a20"
 DOWN, DOWN_DIM = "#ff4d5e", "#3d0f15"
@@ -138,10 +139,12 @@ def chart_layers(q, color, dim):
 
     span = q["end"] - q["start"]
 
-    # Last point that lands in each column.
+    # Last point that lands in each column. A bar's timestamp is its start,
+    # so place each close at the end of its bar: the 3:55 bar closes at 4:00
+    # and reaches the right edge.
     ys = {}
     for t, c in pts:
-        x = int((t - q["start"]) * (WIDTH - 1) / span)
+        x = int(math.round((t + BAR_SECS - q["start"]) * (WIDTH - 1) / span))
         x = max(0, min(WIDTH - 1, x))
         ys[x] = y_of(c)
 

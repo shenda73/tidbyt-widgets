@@ -33,7 +33,7 @@
     {
       "id": "stocks",
       "file": "stocks.star",
-      "every": 5,
+      "every": 1,
       "config": {
         "tickers": "^GSPC:S&P,TSLA,SPCX",
         "seconds": "5"
