@@ -116,7 +116,7 @@ def nasdaq_points(symbol, start, end):
     chart = data.get("chart") or []
 
     # Nasdaq's x is New York wall-clock time written as if it were UTC.
-    offset = time.from_timestamp(start).in_location("America/New_York").format("-0700")
+    offset = time.from_timestamp(int(start)).in_location("America/New_York").format("-0700")
     shift = (int(offset[1:3]) * 3600 + int(offset[3:5]) * 60) * (1 if offset[0] == "-" else -1)
     pts = []
     for p in chart:
