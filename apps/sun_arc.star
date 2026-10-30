@@ -1,7 +1,9 @@
 """
 Sun Arc for Tidbyt.
 A pixel sun travels along an arc from sunrise to sunset; at night a moon
-travels it from sunset to the next sunrise. The sky color follows the sun.
+travels it from sunset to the next sunrise. The sky color follows the sun,
+and it sets behind the Manhattan skyline across the Hudson, whose windows
+light up at night.
 
 Animated: by day the sun's glow pulses and clouds drift by; at night the
 stars twinkle and a shooting star crosses once per loop.
@@ -40,6 +42,19 @@ WRAP = 76  # clouds wrap after moving this far (64 + room to enter and leave)
 STARS = [
     (4, 3), (11, 9), (17, 2), (24, 6), (29, 1), (37, 4), (43, 10),
     (48, 2), (55, 7), (60, 3), (8, 15), (57, 14), (20, 12), (40, 16),
+]
+
+# Manhattan skyline across the Hudson, as (x, width, height above the horizon).
+# The back row is taller and hazier; the front row is darker and closer.
+SKYLINE_BACK = [
+    (2, 4, 5), (7, 3, 10), (8, 1, 13), (10, 4, 6), (14, 3, 4),
+    (18, 3, 5), (22, 3, 8), (25, 3, 6), (30, 4, 5),
+    (38, 5, 6), (39, 3, 8), (40, 1, 12), (44, 3, 5),
+    (48, 3, 7), (49, 1, 10), (52, 4, 6), (57, 2, 11), (59, 4, 4),
+]
+SKYLINE_FRONT = [
+    (0, 5, 3), (5, 5, 2), (11, 7, 3), (18, 4, 4), (26, 6, 3),
+    (33, 5, 2), (43, 5, 3), (51, 6, 2), (60, 4, 3),
 ]
 
 # Cloud shapes as rows of (x offset, width).
@@ -179,6 +194,36 @@ def night_frame(i, x, y, t):
                 layers.append(pixel(px, py, color, w = 2))
     return layers
 
+def skyline(t, is_day):
+    """Two rows of buildings; lit windows at night."""
+    if is_day:
+        back = lerp_color("#5a3a5c", "#5f87b0", t)
+        front = lerp_color("#2e1f3a", "#38557a", t)
+    else:
+        back = lerp_color("#2a1d40", "#121831", t)
+        front = lerp_color("#160f26", "#080b18", t)
+    kids = [pixel(x, HORIZON - h, back, w = w, h = h) for x, w, h in SKYLINE_BACK]
+    if not is_day:
+        for x, w, h in SKYLINE_BACK:
+            for wy in range(HORIZON - h + 1, HORIZON - 2, 2):
+                for wx in range(x, x + w):
+                    if (wx * 7 + wy * 3) % 9 < 2:
+                        kids.append(pixel(wx, wy, "#9a7434" if (wx + wy) % 3 else "#ffd877"))
+    kids += [pixel(x, HORIZON - h, front, w = w, h = h) for x, w, h in SKYLINE_FRONT]
+    return kids
+
+def river_frame(i, x, color, glint):
+    """The Hudson: a reflection under the sun or moon, and drifting glints."""
+    kids = []
+    for dx in range(-2, 3):
+        if 0 <= x + dx and x + dx < W and (i // 6 + dx) % 3 != 0:
+            kids.append(pixel(x + dx, HORIZON, glint))
+    for n in range(3):
+        gx = (n * 23 + i // 2) % W
+        if (i // 4 + n) % 3 == 0:
+            kids.append(pixel(gx, HORIZON, color))
+    return kids
+
 def main(config):
     lat = float(config.get("lat", DEFAULT_LAT))
     lng = float(config.get("lng", DEFAULT_LNG))
@@ -214,7 +259,8 @@ def main(config):
             lerp_color("#f2793a", "#7cc0f2", t),
         )
         background += arc_dots(f, "#ffe08a", lerp_color("#c9a0a0", "#c8e4ff", t))
-        horizon_color = lerp_color("#ff9a4a", "#5fae4f", t)
+        horizon_color = lerp_color("#7a3a3a", "#2f6fa8", t)
+        glint, sparkle = lerp_color("#ffb060", "#fff2a8", t), lerp_color("#c07050", "#9fd0f5", t)
         left_color, right_color = "#ffd36b", "#ff8a3d"
         make_frame = day_frame
     else:
@@ -224,23 +270,31 @@ def main(config):
             lerp_color("#5a2e5e", "#0c1636", t),
         )
         background += arc_dots(f, "#8c96c8", "#2c3460")
-        horizon_color = lerp_color("#a0507a", "#23305a", t)
+        horizon_color = lerp_color("#3a2850", "#141c3a", t)
+        glint, sparkle = "#aab4e0", "#3a4680"
         left_color, right_color = "#ff8a3d", "#ffd36b"
         make_frame = night_frame
 
-    # Moving layer, between the sky and the ground.
+    # Moving layers: sky (behind the skyline) and river (in front of it).
     if config.get("frame"):
-        moving = render.Stack(children = make_frame(int(config.get("frame")), x, y, t))
+        i = int(config.get("frame"))
+        moving = render.Stack(children = make_frame(i, x, y, t))
+        river = render.Stack(children = river_frame(i, x, sparkle, glint))
     else:
         moving = render.Animation(children = [
             render.Stack(children = make_frame(i, x, y, t))
             for i in range(FRAMES)
         ])
+        river = render.Animation(children = [
+            render.Stack(children = river_frame(i, x, sparkle, glint))
+            for i in range(FRAMES)
+        ])
 
-    # Ground drawn last so it hides the bottom of the sun/moon at the horizon.
-    ground = [
+    # Skyline and river drawn over the sky so the sun/moon sets behind the city.
+    ground = skyline(t, is_day) + [
         pixel(0, HORIZON, horizon_color, w = W),
         pixel(0, HORIZON + 1, "#000000", w = W, h = 32 - HORIZON - 1),
+        river,
     ]
 
     remaining = fmt_duration((end - now).seconds)

@@ -1,6 +1,6 @@
 """
 Oura 7-day trends for Tidbyt.
-One row per score (sleep, readiness, activity): a line chart of the last
+One row per score (sleep, readiness, activity), each with its icon: a line chart of the last
 seven days ending on a bright dot for today, then today's score and the change
 since yesterday. The lines draw in from the left when the widget comes on,
 then today's dot glows.
@@ -18,7 +18,7 @@ load("render.star", "render")
 
 FONT = "tom-thumb"
 ROW_Y = [0, 11, 22]  # each row is 10 px tall, with a 1-px line between rows
-CHART_X, CHART_W = 14, 28  # chart spans x 14..41
+CHART_X, CHART_W = 10, 31  # chart spans x 10..40
 CHART_H = 9  # rows y0+1 .. y0+9 of each row
 MIN_SPAN = 10  # least score range shown, so small wiggles stay small
 DRAW_FRAMES = 14
@@ -26,11 +26,42 @@ HOLD_FRAMES = 136  # (DRAW + HOLD) * DELAY_MS is about one rotation slot
 DELAY_MS = 100
 UP, DOWN, FLAT = "#2ee86a", "#ff4d4d", "#888888"
 
-# key, label, line color, dim color (fill under the line)
+HEX = "0123456789abcdef"
+
+# 7x7 icons: "o" is the row color, "h" a highlight, "." empty.
+MOON = [
+    "..oooo.",
+    ".ooo...",
+    "ooo....",
+    "ooo....",
+    "ooo....",
+    ".ooo...",
+    "..oooo.",
+]
+HEART = [
+    ".oo.oo.",
+    "ohooooo",
+    "ooooooo",
+    "ooooooo",
+    ".ooooo.",
+    "..ooo..",
+    "...o...",
+]
+FLAME = [
+    "...o...",
+    "..oo...",
+    "..ooo.o",
+    ".oooooo",
+    "ooohooo",
+    "oohhhoo",
+    ".oohoo.",
+]
+
+# key, icon, line color, icon highlight
 ROWS = [
-    ("sleep", "SLP", "#6c9cff", "#121c33"),
-    ("readiness", "RDY", "#3ddc97", "#0b2a1d"),
-    ("activity", "ACT", "#ffa53d", "#2e1d0a"),
+    ("sleep", MOON, "#6c9cff", "#e8f0ff"),
+    ("readiness", HEART, "#3ddc97", "#d8ffef"),
+    ("activity", FLAME, "#ffa53d", "#ffe680"),
 ]
 
 SAMPLE = {"series": {
@@ -83,15 +114,33 @@ def arrow(x, y, up, color):
     rows = [(2, 1), (1, 3), (0, 5)]  # (x offset, width) per row, tip first
     return [pixel(x + dx, y + (i if up else 2 - i), color, w = w) for i, (dx, w) in enumerate(rows)]
 
+def mix(a, b, t):
+    """Blend hex colors a -> b by t in [0, 1]."""
+    out = "#"
+    for i in (1, 3, 5):
+        va, vb = int(a[i:i + 2], 16), int(b[i:i + 2], 16)
+        v = max(0, min(255, int(va + (vb - va) * t + 0.5)))
+        out += HEX[v // 16] + HEX[v % 16]
+    return out
+
+def icon(x, y, rows, color, highlight):
+    kids = []
+    for dy, r in enumerate(rows):
+        for dx, ch in enumerate(r.elems()):
+            if ch != ".":
+                kids.append(pixel(x + dx, y + dy, highlight if ch == "h" else color))
+    return kids
+
 def row(y0, spec, series, grow, glow):
-    key, label, color, dim = spec
-    kids = [text(0, y0 + 2, label, color)]
-    bottom = y0 + CHART_H
+    key, glyph, color, highlight = spec
+    kids = icon(0, y0 + 2, glyph, color, highlight)
+    top, bottom = y0 + 1, y0 + CHART_H
     pts = points(y0, series)
     reveal = CHART_X + int(CHART_W * grow + 0.5)  # columns drawn so far
 
-    # Faint fill under the line, then the line itself.
+    # Line pixels, and the highest one in each column.
     seen = {}
+    dots = []
     for k in range(len(pts) - 1):
         if pts[k] == None or pts[k + 1] == None:
             continue
@@ -100,9 +149,18 @@ def row(y0, spec, series, grow, glow):
                 continue
             if x not in seen or y < seen[x]:
                 seen[x] = y
-            kids.append(pixel(x, y, color))
-    fill = [pixel(x, y + 1, dim, h = bottom - y) for x, y in seen.items() if y < bottom]
-    kids = kids[:1] + fill + kids[1:]
+            dots.append(pixel(x, y, color))
+
+    # Area fill: a gradient fading toward the baseline, masked off above the line.
+    if seen:
+        x0, x1 = min(seen.keys()), max(seen.keys())
+        for y in range(top, bottom + 1):
+            k = (y - top) / (bottom - top)
+            kids.append(pixel(x0, y, mix("#000000", color, 0.40 - 0.32 * k), w = x1 - x0 + 1))
+        for x, y in seen.items():
+            if y > top:
+                kids.append(pixel(x, top, "#000000", h = y - top))
+    kids.extend(dots)
 
     # Every day gets a point (so a day between two gaps still shows); missing
     # days show as a dim tick on the baseline; today is a bright dot.
@@ -114,10 +172,11 @@ def row(y0, spec, series, grow, glow):
             kids.append(pixel(x, bottom, "#333333"))
     last = pts[-1] if pts else None
     if last != None and grow >= 1.0:
-        kids.append(pixel(last[0], last[1], "#ffffff" if glow else color))
         if glow:
-            for dx, dy in ((-1, 0), (0, -1), (0, 1)):
-                kids.append(pixel(last[0] + dx, last[1] + dy, color))
+            halo = mix(color, "#ffffff", 0.35)
+            for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                kids.append(pixel(last[0] + dx, last[1] + dy, halo))
+        kids.append(pixel(last[0], last[1], "#ffffff" if glow else color))
 
     vals = [v for v in series if v != None]
     cur = series[-1] if series else None

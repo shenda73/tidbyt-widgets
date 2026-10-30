@@ -28,17 +28,17 @@ URLS = [
 HEADERS = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
 
 DELAY_MS = 100
-CHART_TOP = 15
-CHART_H = 17  # rows 15..31
+CHART_TOP = 16
+CHART_H = 16  # rows 16..31
 WIDTH = 64
 BAR_SECS = 300  # Yahoo's 5-minute bars
 STALE_SECS = 15 * 60
 NASDAQ_URL = "https://api.nasdaq.com/api/quote/{}/chart?assetclass=stocks"
 NASDAQ_HEADERS = {"User-Agent": HEADERS["User-Agent"], "Accept": "application/json"}
 
-UP, UP_DIM = "#2fe07a", "#0c3a20"
-DOWN, DOWN_DIM = "#ff4d5e", "#3d0f15"
-FLAT = "#aaaaaa"
+UP, DOWN, FLAT = "#2fe07a", "#ff4d5e", "#aaaaaa"
+INK, MUTED, BASELINE = "#f4f4f4", "#777777", "#4a4a4a"
+HEX = "0123456789abcdef"
 
 def fetch(symbol, rng, interval):
     for url in URLS:
@@ -153,14 +153,26 @@ def fmt_price(p):
 def signed(x, decimals):
     return ("+" if x >= 0 else "") + fmt(x, decimals)
 
-def column(x, top, h, color):
-    return render.Padding(pad = (x, top, 0, 0), child = render.Box(width = 1, height = h, color = color))
+def mix(a, b, t):
+    """Blend hex colors a -> b by t in [0, 1]."""
+    out = "#"
+    for i in (1, 3, 5):
+        va, vb = int(a[i:i + 2], 16), int(b[i:i + 2], 16)
+        v = max(0, min(255, int(va + (vb - va) * t + 0.5)))
+        out += HEX[v // 16] + HEX[v % 16]
+    return out
 
-def chart_layers(q, color, dim):
-    """Static dotted previous-close line, and per-column (line, fill) widgets."""
+def box(x, y, w, h, color):
+    return render.Padding(pad = (x, y, 0, 0), child = render.Box(width = w, height = h, color = color))
+
+def column(x, top, h, color):
+    return box(x, top, 1, h, color)
+
+def chart_layers(q, color):
+    """Layers of the area chart, and the (x, y) of the latest point."""
     pts, prev = q["pts"], q["prev"]
     if len(pts) < 2:
-        return [], []
+        return [], None
     vals = [c for _, c in pts]
     lo, hi = min(vals), max(vals)
     if prev != None:
@@ -181,74 +193,89 @@ def chart_layers(q, color, dim):
         x = int(math.round((t - q["start"]) * (WIDTH - 1) / (span - q["bar"])))
         x = max(0, min(WIDTH - 1, x))
         ys[x] = y_of(c)
+    first, last = min(ys.keys()), max(ys.keys())
 
+    # Line segments per column, joined vertically to the previous column.
+    segs = []
+    last_y = None
+    for x in range(first, last + 1):
+        y = ys.get(x, last_y)
+        a, b = (y, y) if last_y == None else (min(y, last_y), max(y, last_y))
+        segs.append((x, a, b))
+        last_y = y
+
+    # Area fill: a gradient that fades toward the bottom, masked off above the line.
+    width = last - first + 1
+    fill = []
+    for r in range(CHART_H):
+        k = r / (CHART_H - 1)
+        fill.append(box(first, CHART_TOP + r, width, 1, mix("#000000", color, 0.42 - 0.36 * k)))
+    mask = [column(x, CHART_TOP, a - CHART_TOP, "#000000") for x, a, _ in segs if a > CHART_TOP]
+
+    # Dotted previous close across the whole chart.
     base = []
     if prev != None:
         py = y_of(prev)
-        base = [column(x, py, 1, "#555555") for x in range(0, WIDTH, 2)]
+        base = [column(x, py, 1, BASELINE) for x in range(0, WIDTH, 2)]
 
-    cols = []
-    last_y = None
-    for x in range(WIDTH):
-        if x not in ys:
-            if last_y == None or x > max(ys.keys()):
-                continue
-            y = last_y
-        else:
-            y = ys[x]
-        a, b = (y, y) if last_y == None else (min(y, last_y), max(y, last_y))
-        bottom = CHART_TOP + CHART_H
-        cols.append((x, y, [
-            column(x, b + 1, bottom - b - 1, dim) if bottom - b - 1 > 0 else None,
-            column(x, a, b - a + 1, color),
-        ]))
-        last_y = y
-    return base, cols
+    line = [column(x, a, b - a + 1, color) for x, a, b in segs]
+    return fill + mask + base + line, (last, last_y)
+
+def arrow(x, y, up, color):
+    """5x3 triangle, pointing up or down."""
+    rows = [(2, 1), (1, 3), (0, 5)]
+    return [box(x + dx, y + (i if up else 2 - i), w, 1, color) for i, (dx, w) in enumerate(rows)]
+
+def chip(s, color):
+    """Text knocked out of a small rounded tag."""
+    w = 4 * len(s) + 2
+    return render.Stack(children = [
+        render.Box(width = w, height = 7, color = color),
+        render.Padding(pad = (1, 1, 0, 0), child = render.Text(s, font = "tom-thumb", color = "#000000")),
+    ] + [box(cx, cy, 1, 1, "#000000") for cx in (0, w - 1) for cy in (0, 6)])
 
 def ticker_frames(symbol, label, frames):
     q = quote(symbol)
-    head = render.Text(label, font = "tb-8", color = "#ffffff")
+    head = render.Text(label, font = "tb-8", color = INK)
     if q == None:
-        frame = render.Column(children = [head, render.Text("no data", font = "tom-thumb", color = "#777777")])
+        frame = render.Stack(children = [
+            head,
+            render.Padding(pad = (0, 10, 0, 0), child = render.Text("no data", font = "tom-thumb", color = MUTED)),
+            column(0, 31, 1, "#000000"),
+        ] + [column(x, CHART_TOP + CHART_H // 2, 1, BASELINE) for x in range(0, WIDTH, 2)])
         return [frame] * frames
 
     price, prev = q["price"], q["prev"]
+    kids = [render.Row(
+        expanded = True,
+        main_align = "space_between",
+        children = [head, render.Text(fmt_price(price), font = "tb-8", color = INK)],
+    )]
     if prev:
         chg = price - prev
         pct = chg / prev * 100
-        color, dim = (UP, UP_DIM) if chg >= 0 else (DOWN, DOWN_DIM)
-        chg_row = render.Row(
+        color = UP if chg >= 0 else DOWN
+        kids.extend(arrow(0, 10, chg >= 0, color))
+        kids.append(render.Padding(pad = (6, 8, 0, 0), child = render.Text(fmt(abs(chg), 2), font = "tom-thumb", color = color)))
+        kids.append(render.Padding(pad = (0, 8, 0, 0), child = render.Row(
             expanded = True,
-            main_align = "space_between",
-            children = [
-                render.Text(signed(chg, 2), font = "tom-thumb", color = color),
-                render.Text(signed(pct, 2) + "%", font = "tom-thumb", color = color),
-            ],
-        )
+            main_align = "end",
+            children = [chip(signed(pct, 2) + "%", color)],
+        )))
     else:
-        color, dim = FLAT, "#222222"
-        chg_row = render.Box(height = 6)
+        color = FLAT
 
-    top = render.Column(children = [
-        render.Row(
-            expanded = True,
-            main_align = "space_between",
-            children = [head, render.Text(fmt_price(price), font = "tb-8", color = "#ffffff")],
-        ),
-        render.Padding(pad = (0, 1, 0, 0), child = chg_row),
-    ])
+    layers, dot = chart_layers(q, color)
+    still = render.Stack(children = layers + kids)
+    if dot == None:
+        return [still] * frames
 
-    base, cols = chart_layers(q, color, dim)
-    layers = [top] + base
-    for _, _, ws in cols:
-        layers.extend([w for w in ws if w != None])
-    still = render.Stack(children = layers)
-
-    # Pulse the latest point.
-    lit = still
-    if cols:
-        x, y, _ = cols[-1]
-        lit = render.Stack(children = layers + [column(x, y, 1, "#ffffff")])
+    # The latest price blinks: white with a glow, then back to the line color.
+    x, y = dot
+    glow = mix(color, "#ffffff", 0.35)
+    halo = [box(x + dx, y + dy, 1, 1, glow) for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1))
+            if 0 <= x + dx and x + dx < WIDTH and CHART_TOP <= y + dy and y + dy < 32]
+    lit = render.Stack(children = layers + halo + [box(x, y, 1, 1, "#ffffff")] + kids)
     return [lit if (f // 5) % 2 == 0 else still for f in range(frames)]
 
 def parse_tickers(s):
