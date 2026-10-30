@@ -9,6 +9,7 @@ The apps live in apps/*.star and are listed in apps.json. Each entry:
            each night run.
   config   optional key/value pairs passed to the app
   enabled  optional, false to skip the app
+  source   optional, "oura" to fetch Oura data and pass it as config `data`
 
 Invoke with {"apps": ["sunarc", ...]} to refresh those apps now regardless
 of their interval, or {"apps": "all"} for every enabled app. The night schedule
@@ -17,6 +18,7 @@ sends {"night": true}.
 Environment:
   DEVICE_ID    Tidbyt device ID
   TOKEN_PARAM  SSM parameter name holding the Tidbyt API token (SecureString)
+  OURA_PARAM   SSM parameter with the Oura credentials (default /oura/credentials)
   DRY_RUN      if "1", render only and skip the push
 """
 
@@ -29,6 +31,8 @@ import time
 import urllib.request
 
 import boto3
+
+import oura
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 APPS_DIR = os.path.join(ROOT, "apps")
@@ -70,15 +74,31 @@ def render(app):
     src = os.path.join(work, os.path.basename(app["file"]))
     shutil.copyfile(os.path.join(APPS_DIR, app["file"]), src)
 
+    config = dict(app.get("config", {}))
+    if app.get("source") == "oura":
+        config["data"] = json.dumps(oura_data(config.get("tz", "America/New_York")))
+
     out = f"/tmp/{app['id']}.webp"
     args = ["pixlet", "render", src, "-o", out]
-    args += [f"{k}={v}" for k, v in app.get("config", {}).items()]
+    args += [f"{k}={v}" for k, v in config.items()]
     try:
         subprocess.run(args, check=True, capture_output=True, text=True, env={**os.environ, "HOME": "/tmp"})
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"pixlet render failed: {e.stderr.strip()}") from e
     with open(out, "rb") as f:
         return f.read()
+
+
+def oura_data(tz):
+    try:
+        return oura.summary(tz)
+    except oura.NotConnected:
+        return {"error": "not connected"}
+    except Exception as e:
+        # The smoke test has no AWS credentials: render the error screen instead.
+        if os.environ.get("DRY_RUN") == "1":
+            return {"error": "no data"}
+        raise RuntimeError(f"oura: {e}") from e
 
 
 def push(app_id, image):

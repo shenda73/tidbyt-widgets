@@ -21,6 +21,7 @@ REGION="${REGION:-us-east-1}"
 NAME="tidbyt-widgets"
 DEVICE_ID="${DEVICE_ID:?set DEVICE_ID in .env or the environment}"
 TOKEN_PARAM="/tidbyt/api-token"
+OURA_PARAM="/oura/credentials"  # written by scripts/oura_login.py
 TZ_NAME="America/New_York"
 # Every minute from 5 AM to midnight, every 10 minutes overnight (local time, DST-aware).
 DAY_CRON="cron(* 5-23 * * ? *)"
@@ -58,10 +59,13 @@ if ! aws iam get-role --role-name "$ROLE_NAME" >/dev/null 2>&1; then
 fi
 aws iam put-role-policy --role-name "$ROLE_NAME" --policy-name read-tidbyt-token --policy-document \
   "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"ssm:GetParameter\",\"Resource\":\"arn:aws:ssm:$REGION:$ACCOUNT:parameter$TOKEN_PARAM\"}]}"
+# Oura refresh tokens are single use, so the Lambda writes the new one back.
+aws iam put-role-policy --role-name "$ROLE_NAME" --policy-name oura-credentials --policy-document \
+  "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":[\"ssm:GetParameter\",\"ssm:PutParameter\"],\"Resource\":\"arn:aws:ssm:$REGION:$ACCOUNT:parameter$OURA_PARAM\"}]}"
 ROLE_ARN=$(aws iam get-role --role-name "$ROLE_NAME" --query Role.Arn --output text)
 
 echo "==> Lambda function"
-ENV="Variables={DEVICE_ID=$DEVICE_ID,TOKEN_PARAM=$TOKEN_PARAM}"
+ENV="Variables={DEVICE_ID=$DEVICE_ID,TOKEN_PARAM=$TOKEN_PARAM,OURA_PARAM=$OURA_PARAM}"
 if aws lambda get-function --region "$REGION" --function-name "$NAME" >/dev/null 2>&1; then
   aws lambda update-function-code --region "$REGION" --function-name "$NAME" \
     --image-uri "$REPO_URI:$TAG" >/dev/null

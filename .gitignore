@@ -1,6 +1,7 @@
 # Personal config: your location, device ID
 apps.json
 .env
+.oura
 
 # Render output
 *.webp

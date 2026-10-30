@@ -21,6 +21,15 @@
       }
     },
     {
+      "id": "oura",
+      "file": "oura.star",
+      "every": 10,
+      "source": "oura",
+      "config": {
+        "tz": "America/New_York"
+      }
+    },
+    {
       "id": "hello",
       "file": "hello_world.star",
       "every": 60,

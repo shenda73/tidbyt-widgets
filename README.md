@@ -20,6 +20,13 @@ that widget's slot in the rotation without interrupting what's on screen.
   from airplanes.live (falling back to adsb.lol), both free with no key. Config: `lat`,
   `lng`, `radius_nm`, and optionally `river_offset_mi` / `river_bearing` to draw a
   river line.
+- **Oura** (`apps/oura.star`): sleep, readiness and activity scores as three rings
+  that fill up, with last night's sleep time, HRV and today's steps. The Lambda fetches
+  the data from the Oura API v2 (`lambda/oura.py`) and passes it in, so the app holds no
+  credentials. One-time setup: create an app at developer.ouraring.com with redirect
+  URI `http://localhost:8765/callback`, put `OURA_CLIENT_ID` and `OURA_CLIENT_SECRET`
+  in `.oura`, then run `python3 scripts/oura_login.py`. Tokens are stored in SSM
+  (`/oura/credentials`). Gen3+ rings need an active Oura membership for API access.
 - **Hello World** (`apps/hello_world.star`): the smallest possible example.
 
 ## How it works
