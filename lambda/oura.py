@@ -13,6 +13,7 @@ import datetime
 import json
 import os
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from zoneinfo import ZoneInfo
@@ -73,29 +74,71 @@ def _get(token, collection, start, end):
         return json.load(resp).get("data", [])
 
 
-def _latest(rows):
-    return max(rows, key=lambda r: r.get("day", "")) if rows else {}
+def _try_get(token, collection, start, end):
+    """Like _get, but [] when the endpoint is off-limits (e.g. a scope we didn't ask for)."""
+    try:
+        return _get(token, collection, start, end)
+    except urllib.error.HTTPError as e:
+        if e.code in (401, 403, 404):
+            return []
+        raise
 
 
-def summary(tz="America/New_York"):
-    """Latest scores and a few stats, as passed to apps/oura.star."""
+def _by_day(rows, pick=None):
+    """{day: row}; with several rows a day, keep the one `pick` ranks highest."""
+    out = {}
+    for r in rows:
+        d = r.get("day")
+        if d and (d not in out or (pick and pick(r) > pick(out[d]))):
+            out[d] = r
+    return out
+
+
+def _clock(ts):
+    """'2026-10-29T23:41:00-04:00' -> '23:41'."""
+    return ts[11:16] if ts and len(ts) >= 16 else None
+
+
+def summary(tz="America/New_York", days=7):
+    """The last `days` days of each signal, oldest first, as passed to apps/oura.star."""
     token = access_token()
     today = datetime.datetime.now(ZoneInfo(tz)).date()
-    start, end = (today - datetime.timedelta(days=2)).isoformat(), (today + datetime.timedelta(days=1)).isoformat()
+    dates = [(today - datetime.timedelta(days=n)).isoformat() for n in range(days - 1, -1, -1)]
+    start, end = dates[0], (today + datetime.timedelta(days=1)).isoformat()
 
-    sleep = _latest(_get(token, "daily_sleep", start, end))
-    ready = _latest(_get(token, "daily_readiness", start, end))
-    activity = _latest(_get(token, "daily_activity", start, end))
-    # The main sleep period of the latest night, for duration, HRV and resting HR.
-    night = _latest([s for s in _get(token, "sleep", start, end) if s.get("type") == "long_sleep"])
+    sleep = _by_day(_get(token, "daily_sleep", start, end))
+    ready = _by_day(_get(token, "daily_readiness", start, end))
+    activity = _by_day(_get(token, "daily_activity", start, end))
+    # The main sleep period of each night, for HRV, resting HR and so on.
+    nights = _by_day(
+        [s for s in _get(token, "sleep", start, end) if s.get("type") == "long_sleep"],
+        pick=lambda s: s.get("total_sleep_duration") or 0,
+    )
+    stress = _by_day(_try_get(token, "daily_stress", start, end))
+    spo2 = _by_day(_try_get(token, "daily_spo2", start, end))
 
+    def series(rows, get):
+        return [get(rows[d]) if d in rows else None for d in dates]
+
+    def stress_min(r):
+        return None if r.get("stress_high") is None else round(r["stress_high"] / 60)
+
+    last_night = nights.get(dates[-1], {})
     return {
-        "day": sleep.get("day") or ready.get("day"),
-        "sleep": sleep.get("score"),
-        "readiness": ready.get("score"),
-        "activity": activity.get("score"),
-        "steps": activity.get("steps"),
-        "sleep_secs": night.get("total_sleep_duration"),
-        "hrv": night.get("average_hrv"),
-        "rhr": night.get("lowest_heart_rate"),
+        "series": {
+            "sleep": series(sleep, lambda r: r.get("score")),
+            "readiness": series(ready, lambda r: r.get("score")),
+            "activity": series(activity, lambda r: r.get("score")),
+            "hrv": series(nights, lambda r: r.get("average_hrv")),
+            "rhr": series(nights, lambda r: r.get("lowest_heart_rate")),
+            "temp": series(ready, lambda r: r.get("temperature_deviation")),
+            "breath": series(nights, lambda r: r.get("average_breath")),
+            "spo2": series(spo2, lambda r: (r.get("spo2_percentage") or {}).get("average")),
+            "steps": series(activity, lambda r: r.get("steps")),
+            "cal": series(activity, lambda r: r.get("active_calories")),
+            "stress": series(stress, stress_min),
+            "deep": series(nights, lambda r: r.get("deep_sleep_duration")),
+            "eff": series(nights, lambda r: r.get("efficiency")),
+        },
+        "bed": _clock(last_night.get("bedtime_start")),
     }
