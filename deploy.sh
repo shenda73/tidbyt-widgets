@@ -92,13 +92,14 @@ aws iam put-role-policy --role-name "$SCHED_ROLE_NAME" --policy-name invoke-lamb
 SCHED_ROLE_ARN=$(aws iam get-role --role-name "$SCHED_ROLE_NAME" --query Role.Arn --output text)
 
 # create-schedule or update-schedule, whichever applies.
+# No retries: the next scheduled run does the same job anyway.
 schedule() {
   local name=$1 expr=$2 input=$3 verb=create-schedule
   aws scheduler get-schedule --region "$REGION" --name "$name" >/dev/null 2>&1 && verb=update-schedule
   aws scheduler "$verb" --region "$REGION" --name "$name" \
     --schedule-expression "$expr" --schedule-expression-timezone "$TZ_NAME" \
     --flexible-time-window Mode=OFF \
-    --target "{\"Arn\":\"$FUNC_ARN\",\"RoleArn\":\"$SCHED_ROLE_ARN\",\"Input\":\"$input\"}" >/dev/null
+    --target "{\"Arn\":\"$FUNC_ARN\",\"RoleArn\":\"$SCHED_ROLE_ARN\",\"Input\":\"$input\",\"RetryPolicy\":{\"MaximumRetryAttempts\":0,\"MaximumEventAgeInSeconds\":3600}}" >/dev/null
 }
 
 echo "==> Schedules ($TZ_NAME)"

@@ -48,6 +48,8 @@ deploy.sh            one-time AWS setup and infrastructure changes
 - **GitHub Actions** builds the image on an arm64 runner and renders every widget as a
   smoke test. On `main`, it then pushes the image to ECR and updates the Lambda. It
   signs in to AWS through OIDC, so the repo holds no AWS keys.
+- **Pushes only update the image.** Changes to schedules, IAM roles or Lambda settings
+  need `./deploy.sh`. Scheduled runs are not retried, since the next run does the same job.
 
 ## Add a widget
 
