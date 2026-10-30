@@ -1,8 +1,9 @@
 """
 Oura 7-day trends for Tidbyt.
-One row per score (sleep, readiness, activity): seven daily bars with today's
-lit up, then today's score and the change since yesterday. The bars grow in
-when the widget comes on, then today's bar glows.
+One row per score (sleep, readiness, activity): a line chart of the last
+seven days ending on a bright dot for today, then today's score and the change
+since yesterday. The lines draw in from the left when the widget comes on,
+then today's dot glows.
 
 The Lambda fetches the data from the Oura API and passes it in as JSON, so
 the app itself needs no credentials.
@@ -17,19 +18,19 @@ load("render.star", "render")
 
 FONT = "tom-thumb"
 ROW_Y = [0, 11, 22]  # each row is 10 px tall, with a 1-px line between rows
-BAR_X = 14  # first bar; bars are 3 px wide on a 4 px pitch
-BAR_MAX = 9
-LO, HI = 50, 100  # score range mapped onto the bar height
-GROW_FRAMES = 12
-HOLD_FRAMES = 138  # (GROW + HOLD) * DELAY_MS is about one rotation slot
+CHART_X, CHART_W = 14, 28  # chart spans x 14..41
+CHART_H = 9  # rows y0+1 .. y0+9 of each row
+MIN_SPAN = 10  # least score range shown, so small wiggles stay small
+DRAW_FRAMES = 14
+HOLD_FRAMES = 136  # (DRAW + HOLD) * DELAY_MS is about one rotation slot
 DELAY_MS = 100
 UP, DOWN, FLAT = "#2ee86a", "#ff4d4d", "#888888"
 
-# key, label, bright color, dim color (past days)
+# key, label, line color, dim color (fill under the line)
 ROWS = [
-    ("sleep", "SLP", "#6c9cff", "#2a3f6e"),
-    ("readiness", "RDY", "#3ddc97", "#1a5c40"),
-    ("activity", "ACT", "#ffa53d", "#6b4518"),
+    ("sleep", "SLP", "#6c9cff", "#121c33"),
+    ("readiness", "RDY", "#3ddc97", "#0b2a1d"),
+    ("activity", "ACT", "#ffa53d", "#2e1d0a"),
 ]
 
 SAMPLE = {"series": {
@@ -44,11 +45,39 @@ def pixel(x, y, color, w = 1, h = 1):
 def text(x, y, s, color):
     return render.Padding(pad = (x, y, 0, 0), child = render.Text(s, font = FONT, color = color))
 
-def bar_height(v):
-    if v == None:
-        return 0
-    t = (min(max(v, LO), HI) - LO) / (HI - LO)
-    return max(1, int(t * BAR_MAX + 0.5))
+def points(y0, series):
+    """(x, y) of each day's value, or None for a missing day."""
+    vals = [v for v in series if v != None]
+    if not vals:
+        return [None] * len(series)
+    lo, hi = min(vals), max(vals)
+    if hi - lo < MIN_SPAN:
+        mid = (lo + hi) / 2.0
+        lo, hi = mid - MIN_SPAN / 2.0, mid + MIN_SPAN / 2.0
+    n = len(series)
+    out = []
+    for i, v in enumerate(series):
+        if v == None:
+            out.append(None)
+            continue
+        x = CHART_X + int(i * (CHART_W - 1) / (n - 1) + 0.5) if n > 1 else CHART_X + CHART_W - 1
+        y = y0 + CHART_H - int((v - lo) * (CHART_H - 1) / (hi - lo) + 0.5)
+        out.append((x, y))
+    return out
+
+def line(a, b):
+    """Pixels on the line from a to b; steep steps are filled so the line stays joined."""
+    (x0, y0), (x1, y1) = a, b
+    ys = [int(y0 + (y1 - y0) * (x - x0) / (x1 - x0) + 0.5) for x in range(x0, x1 + 1)]
+    out = []
+    for k, y in enumerate(ys):
+        ny = ys[k + 1] if k + 1 < len(ys) else y
+        out.append((x0 + k, y))
+        # Climb toward the next column's y within this column.
+        step = 1 if ny > y else -1
+        for yy in range(y + step, ny, step):
+            out.append((x0 + k, yy))
+    return out
 
 def arrow(x, y, up, color):
     rows = [(2, 1), (1, 3), (0, 5)]  # (x offset, width) per row, tip first
@@ -57,19 +86,38 @@ def arrow(x, y, up, color):
 def row(y0, spec, series, grow, glow):
     key, label, color, dim = spec
     kids = [text(0, y0 + 2, label, color)]
-    base = y0 + BAR_MAX  # bottom row of the bars
+    bottom = y0 + CHART_H
+    pts = points(y0, series)
+    reveal = CHART_X + int(CHART_W * grow + 0.5)  # columns drawn so far
 
-    n = len(series)
-    for i, v in enumerate(series):
-        x = BAR_X + 4 * (7 - n + i)
-        today = i == n - 1
-        if v == None:
-            kids.append(pixel(x, base, "#222222", w = 3))  # missing day
+    # Faint fill under the line, then the line itself.
+    seen = {}
+    for k in range(len(pts) - 1):
+        if pts[k] == None or pts[k + 1] == None:
             continue
-        h = max(1, int(bar_height(v) * grow + 0.5))
-        kids.append(pixel(x, base - h + 1, color if today else dim, w = 3, h = h))
-        if today and glow:
-            kids.append(pixel(x, base - h + 1, "#ffffff", w = 3))
+        for x, y in line(pts[k], pts[k + 1]):
+            if x >= reveal:
+                continue
+            if x not in seen or y < seen[x]:
+                seen[x] = y
+            kids.append(pixel(x, y, color))
+    fill = [pixel(x, y + 1, dim, h = bottom - y) for x, y in seen.items() if y < bottom]
+    kids = kids[:1] + fill + kids[1:]
+
+    # Every day gets a point (so a day between two gaps still shows); missing
+    # days show as a dim tick on the baseline; today is a bright dot.
+    for k, p in enumerate(pts):
+        if p != None and p[0] < reveal:
+            kids.append(pixel(p[0], p[1], color))
+        elif p == None:
+            x = CHART_X + int(k * (CHART_W - 1) / max(1, len(pts) - 1) + 0.5)
+            kids.append(pixel(x, bottom, "#333333"))
+    last = pts[-1] if pts else None
+    if last != None and grow >= 1.0:
+        kids.append(pixel(last[0], last[1], "#ffffff" if glow else color))
+        if glow:
+            for dx, dy in ((-1, 0), (0, -1), (0, 1)):
+                kids.append(pixel(last[0] + dx, last[1] + dy, color))
 
     vals = [v for v in series if v != None]
     cur = series[-1] if series else None
@@ -116,9 +164,9 @@ def main(config):
             ],
         ))
 
-    frames = [frame(data, ease((i + 1) / GROW_FRAMES), False) for i in range(GROW_FRAMES)]
+    frames = [frame(data, ease((i + 1) / DRAW_FRAMES), False) for i in range(DRAW_FRAMES)]
 
-    # Hold: today's bars glow on and off. Reuse two frames to keep rendering fast.
+    # Hold: today's dot glows on and off. Reuse two frames to keep rendering fast.
     on, off = frame(data, 1.0, True), frame(data, 1.0, False)
     for i in range(HOLD_FRAMES):
         frames.append(on if (i // 8) % 2 == 0 else off)
