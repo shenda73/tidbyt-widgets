@@ -6,7 +6,8 @@ blinking dot on the latest price. The chart
 spans the whole trading session, so the line grows across the day, and a
 dotted line marks the previous close.
 
-Data comes from Yahoo Finance's chart API, which needs no key.
+Data comes from Yahoo Finance's chart API, which needs no key. When Yahoo's
+feed for a stock is stale, the chart and price come from Nasdaq's instead.
 
 Config:
   tickers  comma-separated Yahoo symbols, each optionally "SYMBOL:Label",
@@ -30,7 +31,10 @@ DELAY_MS = 100
 CHART_TOP = 15
 CHART_H = 17  # rows 15..31
 WIDTH = 64
-BAR_SECS = 300  # 5-minute bars
+BAR_SECS = 300  # Yahoo's 5-minute bars
+STALE_SECS = 15 * 60
+NASDAQ_URL = "https://api.nasdaq.com/api/quote/{}/chart?assetclass=stocks"
+NASDAQ_HEADERS = {"User-Agent": HEADERS["User-Agent"], "Accept": "application/json"}
 
 UP, UP_DIM = "#2fe07a", "#0c3a20"
 DOWN, DOWN_DIM = "#ff4d5e", "#3d0f15"
@@ -91,7 +95,37 @@ def quote(symbol):
         # Assume a 6.5-hour session starting at the first point.
         start = pts[0][0]
         end = start + 390 * 60
-    return {"price": price, "prev": prev, "pts": pts, "start": start, "end": end}
+    q = {"price": price, "prev": prev, "pts": pts, "start": start, "end": end, "bar": BAR_SECS}
+
+    # Yahoo's feed sometimes runs an hour or more behind for some stocks
+    # (SPCX). If its last trade is stale during the session, use Nasdaq's.
+    now = time.now().unix
+    last_trade = meta.get("regularMarketTime") or 0
+    if start != None and not symbol.startswith("^") and start < now and min(now, end) - last_trade > STALE_SECS:
+        nq = nasdaq_points(symbol, start, end)
+        if nq and nq[-1][0] > last_trade:
+            q["pts"], q["price"], q["bar"] = nq, nq[-1][1], 60
+    return q
+
+def nasdaq_points(symbol, start, end):
+    """Regular-session 1-minute (timestamp, price) pairs from Nasdaq, or None."""
+    resp = http.get(NASDAQ_URL.format(symbol), headers = NASDAQ_HEADERS)
+    if resp.status_code != 200:
+        return None
+    data = resp.json().get("data") or {}
+    chart = data.get("chart") or []
+
+    # Nasdaq's x is New York wall-clock time written as if it were UTC.
+    offset = time.from_timestamp(start).in_location("America/New_York").format("-0700")
+    shift = (int(offset[1:3]) * 3600 + int(offset[3:5]) * 60) * (1 if offset[0] == "-" else -1)
+    pts = []
+    for p in chart:
+        if p.get("x") == None or p.get("y") == None:
+            continue
+        t = int(p["x"] // 1000) + shift
+        if start <= t and t < end:
+            pts.append((t, float(p["y"])))
+    return pts if len(pts) >= 2 else None
 
 def fmt(x, decimals):
     """Fixed-point number with thousands separators (no %.Nf in Starlark)."""
@@ -144,7 +178,7 @@ def chart_layers(q, color, dim):
     # and reaches the right edge.
     ys = {}
     for t, c in pts:
-        x = int(math.round((t + BAR_SECS - q["start"]) * (WIDTH - 1) / span))
+        x = int(math.round((t + q["bar"] - q["start"]) * (WIDTH - 1) / span))
         x = max(0, min(WIDTH - 1, x))
         ys[x] = y_of(c)
 
