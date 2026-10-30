@@ -1,0 +1,77 @@
+name: Build and deploy
+
+# Every push to main builds the Lambda image, renders every enabled widget as a
+# smoke test, and deploys the image to the tidbyt-widgets Lambda.
+# Pull requests run the build and smoke test only.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # for AWS sign-in through GitHub OIDC
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  FUNCTION: tidbyt-widgets
+  ECR_REPO: tidbyt-widgets
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm # native arm64, matching the Lambda
+    steps:
+      - uses: actions/checkout@v4
+
+      # The real apps.json holds personal settings (location), so it lives in a
+      # repository secret. Without it (forks, PRs), fall back to the example.
+      - name: Prepare apps.json
+        env:
+          APPS_JSON: ${{ secrets.APPS_JSON }}
+        run: |
+          if [ -n "$APPS_JSON" ]; then
+            printf '%s' "$APPS_JSON" > apps.json
+          else
+            cp apps.example.json apps.json
+          fi
+          python3 -m json.tool apps.json > /dev/null
+
+      - name: Build image
+        run: docker build -f lambda/Dockerfile -t widgets:${{ github.sha }} .
+
+      - name: Render every widget (dry run)
+        run: |
+          docker run -d --name smoke -p 9000:8080 -e DRY_RUN=1 widgets:${{ github.sha }}
+          for i in $(seq 1 20); do
+            out=$(curl -s -m 60 -X POST http://localhost:9000/2015-03-31/functions/function/invocations -d '{"apps":"all"}') && break
+            sleep 1
+          done
+          echo "$out"
+          docker logs smoke
+          echo "$out" | python3 -c 'import json,sys; r=json.load(sys.stdin); sys.exit(1 if "errorMessage" in r else 0)'
+
+      - name: Sign in to AWS
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Push image and update Lambda
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        run: |
+          ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+          REGISTRY="$ACCOUNT.dkr.ecr.$AWS_REGION.amazonaws.com"
+          aws ecr get-login-password | docker login --username AWS --password-stdin "$REGISTRY"
+          IMAGE="$REGISTRY/$ECR_REPO:${GITHUB_SHA::12}"
+          docker tag widgets:${{ github.sha }} "$IMAGE"
+          docker push "$IMAGE"
+          aws lambda update-function-code --function-name "$FUNCTION" --image-uri "$IMAGE" > /dev/null
+          aws lambda wait function-updated --function-name "$FUNCTION"
+          echo "Deployed $IMAGE"

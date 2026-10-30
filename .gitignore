@@ -1,0 +1,11 @@
+# Personal config: your location, device ID
+apps.json
+.env
+
+# Render output
+*.webp
+*.gif
+!docs/*.gif
+
+__pycache__/
+.DS_Store

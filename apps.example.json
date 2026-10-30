@@ -1,0 +1,30 @@
+{
+  "apps": [
+    {
+      "id": "sunarc",
+      "file": "sun_arc.star",
+      "every": 1,
+      "config": {
+        "lat": "40.7128",
+        "lng": "-74.0060",
+        "tz": "America/New_York"
+      }
+    },
+    {
+      "id": "flights",
+      "file": "flights_overhead.star",
+      "every": 1,
+      "config": {
+        "lat": "40.6413",
+        "lng": "-73.7781",
+        "radius_nm": "3"
+      }
+    },
+    {
+      "id": "hello",
+      "file": "hello_world.star",
+      "every": 60,
+      "enabled": false
+    }
+  ]
+}
