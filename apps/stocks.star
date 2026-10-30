@@ -173,12 +173,12 @@ def chart_layers(q, color, dim):
 
     span = q["end"] - q["start"]
 
-    # Last point that lands in each column. A bar's timestamp is its start,
-    # so place each close at the end of its bar: the 3:55 bar closes at 4:00
-    # and reaches the right edge.
+    # Last point that lands in each column. Timestamps are bar starts, so
+    # the first bar (9:30) maps to the left edge and the last (3:55, or 3:59
+    # for 1-minute data) to the right edge.
     ys = {}
     for t, c in pts:
-        x = int(math.round((t + q["bar"] - q["start"]) * (WIDTH - 1) / span))
+        x = int(math.round((t - q["start"]) * (WIDTH - 1) / (span - q["bar"])))
         x = max(0, min(WIDTH - 1, x))
         ys[x] = y_of(c)
 
