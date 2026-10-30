@@ -30,6 +30,15 @@
       }
     },
     {
+      "id": "stocks",
+      "file": "stocks.star",
+      "every": 5,
+      "config": {
+        "tickers": "^GSPC:S&P,TSLA,SPCX",
+        "seconds": "5"
+      }
+    },
+    {
       "id": "hello",
       "file": "hello_world.star",
       "every": 60,

@@ -27,6 +27,11 @@ that widget's slot in the rotation without interrupting what's on screen.
   URI `http://localhost:8765/callback`, put `OURA_CLIENT_ID` and `OURA_CLIENT_SECRET`
   in `.oura`, then run `python3 scripts/oura_login.py`. Tokens are stored in SSM
   (`/oura/credentials`). Gen3+ rings need an active Oura membership for API access.
+- **Stock Watch** (`apps/stocks.star`): cycles through a list of tickers, each with
+  its price, change since the previous close and an intraday sparkline that draws
+  itself in (dotted line = previous close). Set `tickers` to comma-separated Yahoo
+  symbols, optionally `SYMBOL:Label` (default `^GSPC:S&P,TSLA,SPCX`), and `seconds`
+  per ticker. Data from Yahoo Finance's chart API, no key needed.
 - **Hello World** (`apps/hello_world.star`): the smallest possible example.
 
 ## How it works
