@@ -27,7 +27,7 @@ jobs:
   build:
     runs-on: ubuntu-24.04-arm # native arm64, matching the Lambda
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # The real apps.json holds personal settings (location), so it lives in a
       # repository secret. Without it (forks, PRs), fall back to the example.
@@ -58,7 +58,7 @@ jobs:
 
       - name: Sign in to AWS
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ vars.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
