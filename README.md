@@ -9,9 +9,9 @@ that widget's slot in the rotation without interrupting what's on screen.
 |---|---|---|---|
 | ![](docs/sun_arc_day.gif) | ![](docs/sun_arc_night.gif) | ![](docs/flights_overhead.gif) | ![](docs/hello_world.gif) |
 
-| Market Map | Volume Profile | Sectors | Stock Alert |
+| Stock Watch | Sectors | Stock Alert | Market Map |
 |---|---|---|---|
-| ![](docs/market_map.gif) | ![](docs/volume_profile.gif) | ![](docs/sectors.gif) | ![](docs/stock_alert.gif) |
+| ![](docs/stock_watch.gif) | ![](docs/sectors.gif) | ![](docs/stock_alert.gif) | ![](docs/market_map.gif) |
 
 ## Widgets
 
@@ -32,22 +32,21 @@ that widget's slot in the rotation without interrupting what's on screen.
   URI `http://localhost:8765/callback`, put `OURA_CLIENT_ID` and `OURA_CLIENT_SECRET`
   in `.oura`, then run `python3 scripts/oura_login.py`. Tokens are stored in SSM
   (`/oura/credentials`). Gen3+ rings need an active Oura membership for API access.
-- **Stock Watch** (`apps/stocks.star`): cycles through a list of tickers, each with
-  its price, change since the previous close and an intraday sparkline
-  with a blinking dot on the latest price (dotted line = previous close). Set `tickers` to comma-separated Yahoo
-  symbols, optionally `SYMBOL:Label` (default `^GSPC:S&P,TSLA,SPCX`), and `seconds`
-  per ticker. Data from Yahoo Finance's chart API, no key needed.
-- **Market Map** (`apps/market_map.star`): a treemap of the most traded US stocks.
-  A tile's area is the dollar volume traded so far today and its color is the change
-  since the previous close. A glint of light crosses the tiles trading at an unusually
-  high volume for the time of day, and labels fade between ticker and percent change.
-  Config: `count`, `scale`, `unusual`. Data from Yahoo Finance's "most active"
-  screener, no key needed.
-- **Volume Profile** (`apps/volume_profile.star`): cycles through `tickers`. Each one
-  shows the day's price as a glowing area chart next to a sideways histogram of the
-  volume traded at each price, from deep blue (little) to cyan (a lot), with the
-  busiest price in amber. The header has the change since the previous close and the
-  volume pace against the same point of the day over the past month.
+- **Stock Watch** (`apps/stocks.star`): cycles through a list of tickers. Each one
+  shows its price, the change since the previous close and its volume pace (today's
+  volume against the same point of the day over the past month). Below is the day's
+  price as a glowing area chart, next to a sideways histogram of the volume traded at
+  each price: deep blue (little) to cyan (a lot), with the busiest price in amber. Set
+  `tickers` to comma-separated Yahoo symbols, optionally `SYMBOL:Label` (default
+  `^GSPC:S&P,TSLA,SPCX`), and `seconds` per ticker. Data from Yahoo Finance's chart
+  API, no key needed, with Nasdaq's feed as a fallback when Yahoo's is stale.
+- **Market Map** (`apps/market_map.star`, off by default): a treemap of the most
+  traded US stocks. A tile's area is the dollar volume traded so far today and its
+  color is the change since the previous close. A glint of light crosses the tiles
+  trading at an unusually high volume, and labels fade between ticker and percent
+  change. Config: `count`, `scale`, `unusual`. Data from Yahoo Finance's "most active"
+  screener. To turn it on, remove `"enabled": false` from its entry in
+  `apps.example.json`.
 - **Sectors** (`apps/sectors.star`): what is moving, by sector. The eleven S&P 500
   sectors as bars sorted from strongest to weakest, with the S&P 500 as a dotted line
   and an amber tip on sectors trading at unusually high volume. A highlight walks
