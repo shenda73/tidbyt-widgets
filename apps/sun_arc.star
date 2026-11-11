@@ -1,10 +1,9 @@
 """
 Sun Arc for Tidbyt.
-A pixel sun travels along an arc from sunrise to sunset; at night a moon
-travels it from sunset to the next sunrise. The sky color follows the sun.
-
-Animated: by day the sun's glow pulses and clouds drift by; at night the
-stars twinkle and a shooting star crosses once per loop.
+An abstract take on the day: the sky is a stack of flat color bands, the sun
+is a plain disc on a thin arc from sunrise to sunset, and rings ripple out
+from it. At night the disc becomes a hollow ring (the moon) traveling from
+sunset to the next sunrise. The palette follows the time of day.
 
 Config (all optional):
   lat, lng   location (default: New York City)
@@ -19,7 +18,7 @@ load("sunrise.star", "sunrise")
 load("time.star", "time")
 
 W = 64
-HORIZON = 24  # y of the horizon line; the sky is rows 0..23
+HORIZON = 24  # the sky is rows 0..23; the label sits below
 CX = 32  # arc center x
 RX = 27  # arc horizontal radius
 RY = 20  # arc vertical radius
@@ -29,29 +28,17 @@ DEFAULT_LAT = "40.7128"
 DEFAULT_LNG = "-74.0060"
 DEFAULT_TZ = "America/New_York"
 
-# Animation: FRAMES * DELAY_MS is one loop (~15 s, about one rotation slot).
-# Everything that moves repeats exactly within FRAMES so the loop is seamless.
-FRAMES = 152
+# Sky bands from top to bottom, as row counts (they add up to HORIZON).
+BANDS = [7, 6, 5, 4, 2]
+
+# Ripples: RING_COUNT rings spaced RING_GAP apart move out from the disc and
+# fade. Each ring takes FRAMES frames to reach the next ring's place, so the
+# loop is seamless.
+FRAMES = 48
 DELAY_MS = 100
-PULSE = 38  # frames per sun-glow pulse (FRAMES / 4)
-WRAP = 76  # clouds wrap after moving this far (64 + room to enter and leave)
-
-# Fixed star positions for the night sky (x, y).
-STARS = [
-    (4, 3), (11, 9), (17, 2), (24, 6), (29, 1), (37, 4), (43, 10),
-    (48, 2), (55, 7), (60, 3), (8, 15), (57, 14), (20, 12), (40, 16),
-]
-
-# Cloud shapes as rows of (x offset, width).
-CLOUD_BIG = [(3, 4), (1, 9), (0, 12)]
-CLOUD_SMALL = [(2, 3), (0, 7)]
-
-# Clouds: shape, y, start offset, pixels moved per frame (WRAP / speed must
-# divide FRAMES, so speeds are 0.5 or 1.0).
-CLOUDS = [
-    (CLOUD_BIG, 4, 10, 0.5),
-    (CLOUD_SMALL, 12, 50, 1.0),
-]
+RING_GAP = 7
+RING_COUNT = 4
+DISC_R = 3.4  # a 7 px disc
 
 def clamp(v, lo, hi):
     return max(lo, min(hi, v))
@@ -87,9 +74,12 @@ def hspan(x, y, w, color):
         return []
     return [pixel(x0, y, color, w = x1 - x0)]
 
-def wave(i, period, phase = 0.0):
-    """0..1 sine wave over `period` frames."""
-    return 0.5 + 0.5 * math.sin(2 * math.pi * (i / period + phase))
+def band_rows(top, bottom):
+    """Color of each sky row: flat bands stepping from top to bottom."""
+    rows = []
+    for k, h in enumerate(BANDS):
+        rows += [lerp_color(top, bottom, k / (len(BANDS) - 1))] * h
+    return rows
 
 def arc_point(f):
     """Point on the arc for progress f (0 = left horizon, 1 = right horizon)."""
@@ -98,34 +88,61 @@ def arc_point(f):
     y = HORIZON - RY * math.sin(theta)
     return int(math.round(x)), int(math.round(y))
 
-def arc_dots(f, done_color, todo_color):
-    """Dotted arc: the part already traveled is brighter."""
-    dots = []
+def arc_line(f, rows, done_color):
+    """Thin arc: the part already traveled is bright, the rest a faint trace."""
+    out = []
     seen = {}
-    n = 120
+    n = 240
     for i in range(n + 1):
         p = i / n
         x, y = arc_point(p)
         if (x, y) in seen or y >= HORIZON:
             continue
         seen[(x, y)] = True
-        if len(seen) % 2 == 0:
+        if p <= f:
+            out.append(pixel(x, y, lerp_color(rows[y], done_color, 0.85)))
+        else:
+            out.append(pixel(x, y, lerp_color(rows[y], "#ffffff", 0.18)))
+    return out
+
+def disc(cx, cy, r, color):
+    """Filled circle, clipped to the sky."""
+    out = []
+    for y in range(max(0, int(cy - r)), min(HORIZON, int(cy + r) + 1)):
+        dy = y - cy
+        if dy * dy > r * r:
             continue
-        dots.append(pixel(x, y, done_color if p <= f else todo_color))
-    return dots
+        a = int(math.sqrt(r * r - dy * dy))
+        out += hspan(cx - a, y, 2 * a + 1, color)
+    return out
 
-def sky(top, bottom):
-    rows = []
-    for y in range(HORIZON):
-        rows.append(pixel(0, y, lerp_color(top, bottom, y / (HORIZON - 1)), w = W))
-    return rows
+def ring(cx, cy, r, rows, color, alpha):
+    """1 px circle outline blended over the sky bands, clipped to the sky."""
+    out = []
+    ro, ri = r + 0.5, r - 0.5
+    for y in range(max(0, int(cy - ro)), min(HORIZON, int(cy + ro) + 1)):
+        dy = y - cy
+        if dy * dy > ro * ro:
+            continue
+        a_out = int(math.sqrt(ro * ro - dy * dy))
+        c = lerp_color(rows[y], color, alpha)
+        if dy * dy < ri * ri:
+            a_in = int(math.sqrt(ri * ri - dy * dy))
+            out += hspan(cx - a_out, y, a_out - a_in, c)
+            out += hspan(cx + a_in + 1, y, a_out - a_in, c)
+        else:
+            out += hspan(cx - a_out, y, 2 * a_out + 1, c)
+    return out
 
-def disc(x, y, diameter, color):
-    r = diameter // 2
-    return render.Padding(
-        pad = (max(0, x - r), max(0, y - r), 0, 0),
-        child = render.Circle(diameter = diameter, color = color),
-    )
+def ripples(i, cx, cy, rows, color, strength):
+    """Rings moving out from the disc, fading as they go."""
+    out = []
+    for k in range(RING_COUNT):
+        u = (k + i / FRAMES) / RING_COUNT  # 0 at the disc, 1 fully faded
+        r = DISC_R + 1.5 + u * RING_COUNT * RING_GAP
+        alpha = strength * (1.0 - u) * min(1.0, 0.3 + u * 6)
+        out += ring(cx, cy, r, rows, color, alpha)
+    return out
 
 def fmt_duration(seconds):
     mins = int(seconds // 60)
@@ -133,51 +150,6 @@ def fmt_duration(seconds):
     if h == 0:
         return "%dm" % m
     return "%dh%s%dm" % (h, "0" if m < 10 else "", m)
-
-def day_frame(i, x, y, t):
-    """Moving parts by day: pulsing sun glow and drifting clouds."""
-    glow = lerp_color("#c0502a", "#9ccff5", t)
-    sun = lerp_color("#ff6a1a", "#fff2a8", t)
-    p = wave(i, PULSE)
-    layers = [
-        disc(x, y, 13, lerp_color(glow, sun, 0.12 * p)),
-        disc(x, y, 11, lerp_color(glow, sun, 0.25 + 0.2 * p)),
-        disc(x, y, 7, sun),
-    ]
-
-    # Clouds pass in front of the sun: pinkish in golden hour, white at midday.
-    cloud = lerp_color("#f4b4a0", "#ffffff", t)
-    shade = lerp_color("#c98a8a", "#d8e8f8", t)
-    for shape, cy, start, speed in CLOUDS:
-        cx = int(start + i * speed) % WRAP - 12
-        for row, (dx, w) in enumerate(shape):
-            color = shade if row == len(shape) - 1 else cloud
-            layers += hspan(cx + dx, cy + row, w, color)
-    return layers
-
-def night_frame(i, x, y, t):
-    """Moving parts at night: twinkling stars and one shooting star per loop."""
-    layers = []
-    dim = lerp_color("#3a3050", "#3c4470", t)
-    bright = lerp_color("#7a6a90", "#e8ecff", t)
-    for n, (sx, sy) in enumerate(STARS):
-        # Stars twinkle at two speeds with their own phase.
-        period = PULSE if n % 2 else 2 * PULSE
-        layers.append(pixel(sx, sy, lerp_color(dim, bright, wave(i, period, n * 0.37))))
-
-    layers.append(disc(x, y, 7, "#e8ecff"))
-    layers.append(disc(x + 2, y - 1, 5, lerp_color("#3a2850", "#060a1e", t)))  # crescent shadow
-
-    # Shooting star: a short trail sliding down-left for 10 frames.
-    start = 96
-    if start <= i and i < start + 10:
-        k = i - start
-        head_x, head_y = 58 - 3 * k, 1 + k
-        for j, color in enumerate(["#ffffff", "#a0b0e0", "#505c90"]):
-            px, py = head_x + 2 * j, head_y - j
-            if 0 <= px and px < W and 0 <= py and py < HORIZON:
-                layers.append(pixel(px, py, color, w = 2))
-    return layers
 
 def main(config):
     lat = float(config.get("lat", DEFAULT_LAT))
@@ -206,42 +178,40 @@ def main(config):
     height = math.sin(math.pi * f)  # 0 at the horizon, 1 at the top of the arc
     x, y = arc_point(f)
 
-    # Static background: sky and arc.
     if is_day:
         t = clamp(height / 0.5, 0.0, 1.0)  # how far the sun is out of golden hour
-        background = sky(
+        rows = band_rows(
             lerp_color("#2a2f6e", "#1d5fc4", t),
             lerp_color("#f2793a", "#7cc0f2", t),
         )
-        background += arc_dots(f, "#ffe08a", lerp_color("#c9a0a0", "#c8e4ff", t))
-        horizon_color = lerp_color("#ff9a4a", "#5fae4f", t)
+        body_color = lerp_color("#ff6a1a", "#fff2a8", t)
+        ripple_color, strength = body_color, 0.5
+        body = disc(x, y, DISC_R, body_color)
         left_color, right_color = "#ffd36b", "#ff8a3d"
-        make_frame = day_frame
     else:
         t = clamp(height / 0.25, 0.0, 1.0)  # how far we are from twilight
-        background = sky(
+        rows = band_rows(
             lerp_color("#141238", "#02030c", t),
             lerp_color("#5a2e5e", "#0c1636", t),
         )
-        background += arc_dots(f, "#8c96c8", "#2c3460")
-        horizon_color = lerp_color("#a0507a", "#23305a", t)
-        left_color, right_color = "#ff8a3d", "#ffd36b"
-        make_frame = night_frame
+        body_color = "#e8ecff"
+        ripple_color, strength = "#8c96e8", 0.45
 
-    # Moving layer, between the sky and the ground.
+        # The moon is hollow: an outline with the sky showing through.
+        body = disc(x, y, DISC_R, body_color) + disc(x, y, DISC_R - 1.3, rows[clamp(y, 0, HORIZON - 1)])
+        left_color, right_color = "#ff8a3d", "#ffd36b"
+
+    sky = [pixel(0, r, rows[r], w = W) for r in range(HORIZON)]
+    arc = arc_line(f, rows, body_color)
+
+    # Ripples move; everything else is still.
     if config.get("frame"):
-        moving = render.Stack(children = make_frame(int(config.get("frame")), x, y, t))
+        moving = render.Stack(children = ripples(int(config.get("frame")), x, y, rows, ripple_color, strength))
     else:
         moving = render.Animation(children = [
-            render.Stack(children = make_frame(i, x, y, t))
+            render.Stack(children = ripples(i, x, y, rows, ripple_color, strength))
             for i in range(FRAMES)
         ])
-
-    # Ground drawn last so it hides the bottom of the sun/moon at the horizon.
-    ground = [
-        pixel(0, HORIZON, horizon_color, w = W),
-        pixel(0, HORIZON + 1, "#000000", w = W, h = 32 - HORIZON - 1),
-    ]
 
     remaining = fmt_duration((end - now).seconds)
     label = render.Padding(
@@ -259,5 +229,5 @@ def main(config):
 
     return render.Root(
         delay = DELAY_MS,
-        child = render.Stack(children = background + [moving] + ground + [label]),
+        child = render.Stack(children = sky + [moving] + arc + body + [label]),
     )
