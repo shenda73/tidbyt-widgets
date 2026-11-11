@@ -59,6 +59,17 @@
       "every": 5
     },
     {
+      "id": "alert",
+      "file": "stock_alert.star",
+      "every": 1,
+      "source": "stock_alerts",
+      "config": {
+        "tickers": "^GSPC:S&P:1,TSLA,SPCX",
+        "step": "3",
+        "seconds": "7"
+      }
+    },
+    {
       "id": "hello",
       "file": "hello_world.star",
       "every": 60,

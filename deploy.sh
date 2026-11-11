@@ -22,6 +22,7 @@ NAME="tidbyt-widgets"
 DEVICE_ID="${DEVICE_ID:?set DEVICE_ID in .env or the environment}"
 TOKEN_PARAM="/tidbyt/api-token"
 OURA_PARAM="/oura/credentials"  # written by scripts/oura_login.py
+ALERT_PARAM="/tidbyt/alert-state"  # which big-move alerts were already sent (lambda/alerts.py)
 TZ_NAME="America/New_York"
 # Every minute from 5 AM to midnight, every 10 minutes overnight (local time, DST-aware).
 DAY_CRON="cron(* 5-23 * * ? *)"
@@ -62,6 +63,8 @@ aws iam put-role-policy --role-name "$ROLE_NAME" --policy-name read-tidbyt-token
 # Oura refresh tokens are single use, so the Lambda writes the new one back.
 aws iam put-role-policy --role-name "$ROLE_NAME" --policy-name oura-credentials --policy-document \
   "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":[\"ssm:GetParameter\",\"ssm:PutParameter\"],\"Resource\":\"arn:aws:ssm:$REGION:$ACCOUNT:parameter$OURA_PARAM\"}]}"
+aws iam put-role-policy --role-name "$ROLE_NAME" --policy-name alert-state --policy-document \
+  "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":[\"ssm:GetParameter\",\"ssm:PutParameter\"],\"Resource\":\"arn:aws:ssm:$REGION:$ACCOUNT:parameter$ALERT_PARAM\"}]}"
 ROLE_ARN=$(aws iam get-role --role-name "$ROLE_NAME" --query Role.Arn --output text)
 
 echo "==> Lambda function"

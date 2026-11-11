@@ -9,16 +9,21 @@ The apps live in apps/*.star and are listed in apps.json. Each entry:
            each night run.
   config   optional key/value pairs passed to the app
   enabled  optional, false to skip the app
-  source   optional, "oura" to fetch Oura data and pass it as config `data`
+  source   optional: "oura" fetches Oura data and passes it as config `data`;
+           "stock_alerts" checks the watched tickers for big moves (see
+           alerts.py) and, only when one alerts, pushes the app to the front
+           of the Tidbyt instead of into the rotation
 
 Invoke with {"apps": ["sunarc", ...]} to refresh those apps now regardless
 of their interval, or {"apps": "all"} for every enabled app. The night schedule
-sends {"night": true}.
+sends {"night": true}. Add {"alert_test": true} to show the alert screen for
+every watched ticker now, whatever the prices.
 
 Environment:
   DEVICE_ID    Tidbyt device ID
   TOKEN_PARAM  SSM parameter name holding the Tidbyt API token (SecureString)
   OURA_PARAM   SSM parameter with the Oura credentials (default /oura/credentials)
+  ALERT_PARAM  SSM parameter remembering sent alerts (default /tidbyt/alert-state)
   DRY_RUN      if "1", render only and skip the push
 """
 
@@ -32,6 +37,7 @@ import urllib.request
 
 import boto3
 
+import alerts
 import oura
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -66,7 +72,7 @@ def is_due(app, now, night=False):
     return tick % every == 0
 
 
-def render(app):
+def render(app, data=None):
     # Pixlet treats every .star file in a folder as one applet, so give each
     # app a folder of its own.
     work = f"/tmp/apps/{app['id']}"
@@ -75,7 +81,9 @@ def render(app):
     shutil.copyfile(os.path.join(APPS_DIR, app["file"]), src)
 
     config = dict(app.get("config", {}))
-    if app.get("source") == "oura":
+    if data is not None:
+        config["data"] = json.dumps(data)
+    elif app.get("source") == "oura":
         config["data"] = json.dumps(oura_data(config.get("tz", "America/New_York")))
 
     out = f"/tmp/{app['id']}.webp"
@@ -101,12 +109,17 @@ def oura_data(tz):
         raise RuntimeError(f"oura: {e}") from e
 
 
-def push(app_id, image):
-    body = json.dumps({
-        "image": base64.b64encode(image).decode(),
-        "installationID": app_id,
-        "background": True,  # update the rotation slot without interrupting the display
-    }).encode()
+def push(app_id, image, alert=False):
+    if alert:
+        # No installation ID: shown right away, once, and not kept in the rotation.
+        body = {"image": base64.b64encode(image).decode(), "background": False}
+    else:
+        body = {
+            "image": base64.b64encode(image).decode(),
+            "installationID": app_id,
+            "background": True,  # update the rotation slot without interrupting the display
+        }
+    body = json.dumps(body).encode()
     req = urllib.request.Request(
         PUSH_URL.format(os.environ["DEVICE_ID"]),
         data=body,
@@ -129,14 +142,25 @@ def lambda_handler(event, context):
         night = bool((event or {}).get("night"))
         selected = [a for a in apps if is_due(a, now, night)]
 
+    dry = os.environ.get("DRY_RUN") == "1"
     results, failed = {}, []
     for app in selected:
         try:
-            image = render(app)
-            if os.environ.get("DRY_RUN") == "1":
+            is_alert = app.get("source") == "stock_alerts"
+            data = None
+            if is_alert:
+                # The smoke test has no AWS credentials: render every ticker's alert.
+                found = alerts.check(app.get("config", {}), force=dry or bool((event or {}).get("alert_test")))
+                if not found:
+                    results[app["id"]] = "quiet"
+                    continue
+                data = {"alerts": found}
+            image = render(app, data)
+            if dry:
                 results[app["id"]] = f"rendered {len(image)} bytes"
             else:
-                results[app["id"]] = f"pushed {len(image)} bytes (HTTP {push(app['id'], image)})"
+                status = push(app["id"], image, alert=is_alert)
+                results[app["id"]] = f"pushed {len(image)} bytes (HTTP {status})"
         except Exception as e:  # keep going so one broken app doesn't block the rest
             results[app["id"]] = f"error: {e}"
             failed.append(app["id"])

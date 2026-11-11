@@ -12,7 +12,7 @@ RUN curl -fsSL -o /tmp/pixlet.tgz \
  && pixlet version
 
 # Build context is the project root (see deploy.sh).
-COPY lambda/handler.py lambda/oura.py apps.json ${LAMBDA_TASK_ROOT}/
+COPY lambda/handler.py lambda/oura.py lambda/alerts.py apps.json ${LAMBDA_TASK_ROOT}/
 COPY apps/ ${LAMBDA_TASK_ROOT}/apps/
 # The Lambda runs as a non-root user, so local file modes must not leak in.
 RUN chmod -R a+rX ${LAMBDA_TASK_ROOT}
