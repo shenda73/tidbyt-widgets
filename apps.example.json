@@ -40,6 +40,28 @@
       }
     },
     {
+      "id": "marketmap",
+      "file": "market_map.star",
+      "every": 5
+    },
+    {
+      "id": "volprofile",
+      "file": "volume_profile.star",
+      "every": 5,
+      "config": {
+        "tickers": "SPY,NVDA,TSLA",
+        "seconds": "5"
+      }
+    },
+    {
+      "id": "movers",
+      "file": "movers.star",
+      "every": 5,
+      "config": {
+        "seconds": "6"
+      }
+    },
+    {
       "id": "hello",
       "file": "hello_world.star",
       "every": 60,

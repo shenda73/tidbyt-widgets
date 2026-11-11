@@ -9,6 +9,10 @@ that widget's slot in the rotation without interrupting what's on screen.
 |---|---|---|---|
 | ![](docs/sun_arc_day.gif) | ![](docs/sun_arc_night.gif) | ![](docs/flights_overhead.gif) | ![](docs/hello_world.gif) |
 
+| Market Map | Volume Profile | Movers |
+|---|---|---|
+| ![](docs/market_map.gif) | ![](docs/volume_profile.gif) | ![](docs/movers.gif) |
+
 ## Widgets
 
 - **Sun Arc** (`apps/sun_arc.star`): an abstract view of the day. A plain disc for
@@ -33,6 +37,19 @@ that widget's slot in the rotation without interrupting what's on screen.
   with a blinking dot on the latest price (dotted line = previous close). Set `tickers` to comma-separated Yahoo
   symbols, optionally `SYMBOL:Label` (default `^GSPC:S&P,TSLA,SPCX`), and `seconds`
   per ticker. Data from Yahoo Finance's chart API, no key needed.
+- **Market Map** (`apps/market_map.star`): a treemap of the most traded US stocks.
+  A tile's area is the dollar volume traded so far today and its color is the change
+  since the previous close. Tiles trading at an unusually high volume for the time of
+  day breathe. Config: `count`, `scale`, `unusual`. Data from Yahoo Finance's "most
+  active" screener, no key needed.
+- **Volume Profile** (`apps/volume_profile.star`): cycles through `tickers`. Each one
+  shows the day's price line next to a sideways histogram of the volume traded at each
+  price: the busiest price in amber, the band holding 70% of the volume in bright blue.
+  The header has the change since the previous close and the volume pace against the
+  same point of the day over the past month.
+- **Movers** (`apps/movers.star`): the day's top three gainers and top three losers
+  among US stocks worth over $2 billion, each with a small price line drawn from the
+  previous close and the percent change. An amber bar marks twice the usual volume.
 - **Hello World** (`apps/hello_world.star`): the smallest possible example.
 
 ## How it works
