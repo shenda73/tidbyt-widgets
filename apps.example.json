@@ -54,12 +54,9 @@
       }
     },
     {
-      "id": "movers",
-      "file": "movers.star",
-      "every": 5,
-      "config": {
-        "seconds": "6"
-      }
+      "id": "sectors",
+      "file": "sectors.star",
+      "every": 5
     },
     {
       "id": "hello",

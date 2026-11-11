@@ -1,13 +1,19 @@
 """
 Volume profile for Tidbyt.
-Cycles through a list of tickers. For each one, the day's price line sits next
-to a volume profile: a sideways histogram of how much traded at each price,
-on the same price scale as the line.
-The busiest price (the point of control) is amber, the prices around it that
-hold 70% of the volume (the value area) are bright, and the rest is dim. The
-header shows the change since the previous close and the volume pace: today's
-volume so far against the same point of the day over the past month (1.0x is
-normal).
+Cycles through a list of tickers. For each one, the day's price so far is an
+area chart on the left, and on the right, on the same price scale, is its volume
+profile: a sideways histogram of how much traded at each price. The profile
+runs from deep blue (little volume) to bright cyan (a lot); the busiest price
+(the point of control) is amber, and prices outside the band that holds 70%
+of the volume (the value area) are dimmed. A white tick on the profile marks
+the latest price.
+
+The header shows the change since the previous close and the volume pace:
+today's volume so far against the same point of the day over the past month
+(1.0x is normal; amber from 1.5x).
+
+The line draws in and the profile grows out from the point of control when a
+ticker comes on.
 
 Data comes from Yahoo Finance's chart API, which needs no key.
 
@@ -29,26 +35,42 @@ URLS = [
 ]
 HEADERS = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
 
-W = 64
 FONT = "tom-thumb"
 TOP = 8  # chart rows 8..31
 ROWS = 24
-LINE_W = 40  # the price line spans x 0..39
+LINE_W = 40  # the price chart spans x 0..39
 PROFILE_X = 42  # the profile grows right from here, on the same price rows
 PROFILE_W = 22  # longest profile bar
-SESSION_SECS = 390 * 60
 DELAY_MS = 100
-GROW_FRAMES = 12  # the profile grows in when a ticker comes on
+DRAW_FRAMES = 16  # the line draws in and the profile grows
+GLOW_ROWS = 10  # how far the glow under the price line reaches
 VALUE_AREA = 0.7
 
 UP, DOWN, FLAT = "#2fe07a", "#ff4d5e", "#aaaaaa"
 POC = "#ffb020"
-IN_VALUE = "#2f5fa8"
-OUT_VALUE = "#182c4c"
+HEAT = ["#16224a", "#2c66cf", "#62d4ff"]  # profile colors, low to high volume
 PACE_HOT = "#ffb020"
+
+HEX = "0123456789abcdef"
 
 def clamp(v, lo, hi):
     return max(lo, min(hi, v))
+
+def hex2(v):
+    return HEX[v // 16] + HEX[v % 16]
+
+def lerp_color(a, b, t):
+    """Blend hex colors a -> b by t in [0, 1]."""
+    t = clamp(t, 0.0, 1.0)
+    out = "#"
+    for i in (1, 3, 5):
+        ca, cb = int(a[i:i + 2], 16), int(b[i:i + 2], 16)
+        out += hex2(clamp(int(ca + (cb - ca) * t + 0.5), 0, 255))
+    return out
+
+def ease_out(t):
+    t = clamp(t, 0.0, 1.0)
+    return 1.0 - math.pow(1.0 - t, 3)
 
 def px(x, y, color, w = 1, h = 1):
     return render.Padding(
@@ -93,6 +115,10 @@ def volume_until(bars, elapsed):
             total += v
     return total
 
+def row(price, hi, lo):
+    """Chart row of a price: 0 at the day's high, ROWS - 1 at its low."""
+    return clamp(int((hi - price) / (hi - lo) * (ROWS - 1) + 0.5), 0, ROWS - 1)
+
 def study(symbol):
     chart = fetch(symbol)
     if chart == None:
@@ -134,21 +160,24 @@ def study(symbol):
         above = profile[r - 1] if r > 0 else profile[r]
         below = profile[r + 1] if r < ROWS - 1 else profile[r]
         smooth.append((above + 2 * profile[r] + below) / 4)
-    profile = smooth
+
+    # The price line: one chart row per column. The day so far always fills
+    # the chart's width, so it reads as a chart from the first minutes on.
+    cols = {}
+    for x in range(LINE_W):
+        at = x * (len(today) - 1) / (LINE_W - 1)
+        i = min(int(at), len(today) - 2)
+        a, b = today[i][3], today[i + 1][3]
+        cols[x] = row(a + (b - a) * (at - i), hi, lo)
 
     return {
         "price": price,
         "prev": prev,
         "pace": pace,
-        "today": today,
-        "hi": hi,
-        "lo": lo,
-        "profile": profile,
+        "cols": cols,
+        "profile": smooth,
+        "prev_row": row(prev, hi, lo) if prev and lo <= prev and prev <= hi else None,
     }
-
-def row(price, hi, lo):
-    """Chart row of a price: 0 at the day's high, ROWS - 1 at its low."""
-    return clamp(int((hi - price) / (hi - lo) * (ROWS - 1) + 0.5), 0, ROWS - 1)
 
 def value_rows(profile):
     """The point of control and the rows of the value area around it."""
@@ -180,44 +209,73 @@ def value_rows(profile):
             down += 1
     return poc, inside
 
-def profile_layer(profile, poc, inside, grow):
-    """Bars at `grow` (0..1) of their full length."""
+def heat(t):
+    if t < 0.5:
+        return lerp_color(HEAT[0], HEAT[1], t / 0.5)
+    return lerp_color(HEAT[1], HEAT[2], (t - 0.5) / 0.5)
+
+def profile_layer(profile, poc, inside, i):
+    """The profile at frame i: bars grow out from the point of control."""
     out = []
     peak = profile[poc]
     if peak <= 0:
         return out
     for r, v in enumerate(profile):
+        grow = ease_out((i + 1 - abs(r - poc) * 0.6) / (DRAW_FRAMES - 6))
         n = int(math.round(PROFILE_W * v / peak * grow))
         if n <= 0:
             continue
-        color = POC if r == poc else (IN_VALUE if r in inside else OUT_VALUE)
+        if r == poc:
+            color = POC
+        else:
+            color = heat(v / peak)
+            if r not in inside:
+                color = lerp_color(color, "#000000", 0.5)
         out.append(px(PROFILE_X, TOP + r, color, w = n))
     return out
 
-def line_layer(s, color):
-    """Price line across the session; x is time since the open."""
-    today = s["today"]
-    start = today[0][0]
-    out = []
-    last_y = None
-    seen = {}
-    for t, _, _, c, _ in today:
-        x = clamp(int((t - start) / SESSION_SECS * (LINE_W - 1) + 0.5), 0, LINE_W - 1)
-        y = row(c, s["hi"], s["lo"])
-        if x in seen:
-            continue
-        seen[x] = True
+def chart_layer(s, color, shown):
+    """Area chart of the price, up to column `shown`. Returns the widgets
+    and the position of the last point drawn."""
+    cols = s["cols"]
+    xs = [x for x in sorted(cols.keys()) if x < shown]
+    if not xs:
+        return [], None
 
-        # Join to the previous point with a vertical run.
-        y0, y1 = (y, y) if last_y == None else (min(y, last_y), max(y, last_y))
-        if last_y != None and y != last_y:
-            if y > last_y:
+    # A glow hangs under the line: brightest right below it, fading to
+    # black GLOW_ROWS further down.
+    out = []
+    for depth in range(1, GLOW_ROWS + 1):
+        fill = lerp_color("#000000", color, 0.5 * math.pow(1.0 - (depth - 1) / GLOW_ROWS, 1.5))
+        run = None
+        for x in xs + [None]:
+            y = cols[x] + depth if x != None else None
+            same = run != None and y == run[1]
+            if run != None and not same:
+                if run[1] < ROWS:
+                    out.append(px(run[0], TOP + run[1], fill, w = (x if x != None else xs[-1] + 1) - run[0]))
+                run = None
+            if x != None and run == None:
+                run = (x, y)
+
+    # Previous close, dotted, where it falls inside the day's range.
+    if s["prev_row"] != None:
+        for x in range(0, LINE_W, 3):
+            out.append(px(x, TOP + s["prev_row"], "#3a3a3a"))
+
+    # The line itself, joined with vertical runs.
+    last = None
+    for x in xs:
+        y = cols[x]
+        y0, y1 = (y, y) if last == None else (min(y, last), max(y, last))
+        if last != None and y != last:
+            if y > last:
                 y0 += 1
             else:
                 y1 -= 1
         out.append(px(x, TOP + y0, color, h = y1 - y0 + 1))
-        last_y = y
-    return out, (x, TOP + y)
+        last = y
+    return out, (xs[-1], TOP + last)
 
 def pct_text(price, prev):
     if not prev:
@@ -269,26 +327,37 @@ def ticker_frames(label, s, n):
     if s["prev"]:
         color = UP if s["price"] >= s["prev"] else DOWN
     poc, inside = value_rows(s["profile"])
-    line, (dot_x, dot_y) = line_layer(s, color)
     head = header(label, s, color)
-    full = profile_layer(s["profile"], poc, inside, 1.0)
+
+    full_chart, dot = chart_layer(s, color, LINE_W)
+    full_chart = render.Stack(children = full_chart)
+    full_profile = render.Stack(children = profile_layer(s["profile"], poc, inside, DRAW_FRAMES))
 
     frames = []
     for i in range(n):
-        if i < GROW_FRAMES:
-            ease = 1.0 - math.pow(1.0 - (i + 1) / GROW_FRAMES, 2)
-            bars = profile_layer(s["profile"], poc, inside, ease)
+        if i < DRAW_FRAMES:
+            shown = int(ease_out((i + 1) / DRAW_FRAMES) * LINE_W + 0.5)
+            chart, tip = chart_layer(s, color, shown)
+            kids = [head] + profile_layer(s["profile"], poc, inside, i) + chart
+            if tip != None:
+                kids.append(px(tip[0], tip[1], "#ffffff"))
         else:
-            bars = full
-
-        # The latest price blinks.
-        dot = [px(dot_x, dot_y, "#ffffff")] if (i // 5) % 2 == 0 else []
-        frames.append(render.Stack(children = [head] + bars + line + dot))
+            # The latest price breathes, and a tick marks it on the profile.
+            pulse = 0.5 - 0.5 * math.cos(2 * math.pi * (i - DRAW_FRAMES) / 16)
+            halo = lerp_color("#000000", "#ffffff", 0.12 + 0.3 * pulse)
+            x, y = dot
+            kids = [head, full_profile, full_chart]
+            for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                if 0 <= x + dx and x + dx < LINE_W and TOP <= y + dy and y + dy < TOP + ROWS:
+                    kids.append(px(x + dx, y + dy, halo))
+            kids.append(px(x, y, "#ffffff"))
+            kids.append(px(PROFILE_X - 1, y, lerp_color("#555555", "#ffffff", pulse)))
+        frames.append(render.Stack(children = kids))
     return frames
 
 def main(config):
     seconds = int(config.get("seconds", "5"))
-    n = max(GROW_FRAMES + 10, seconds * 1000 // DELAY_MS)
+    n = max(DRAW_FRAMES + 16, seconds * 1000 // DELAY_MS)
 
     frames = []
     for item in config.get("tickers", DEFAULT_TICKERS).split(","):

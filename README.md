@@ -9,9 +9,9 @@ that widget's slot in the rotation without interrupting what's on screen.
 |---|---|---|---|
 | ![](docs/sun_arc_day.gif) | ![](docs/sun_arc_night.gif) | ![](docs/flights_overhead.gif) | ![](docs/hello_world.gif) |
 
-| Market Map | Volume Profile | Movers |
+| Market Map | Volume Profile | Sectors |
 |---|---|---|
-| ![](docs/market_map.gif) | ![](docs/volume_profile.gif) | ![](docs/movers.gif) |
+| ![](docs/market_map.gif) | ![](docs/volume_profile.gif) | ![](docs/sectors.gif) |
 
 ## Widgets
 
@@ -39,17 +39,20 @@ that widget's slot in the rotation without interrupting what's on screen.
   per ticker. Data from Yahoo Finance's chart API, no key needed.
 - **Market Map** (`apps/market_map.star`): a treemap of the most traded US stocks.
   A tile's area is the dollar volume traded so far today and its color is the change
-  since the previous close. Tiles trading at an unusually high volume for the time of
-  day breathe. Config: `count`, `scale`, `unusual`. Data from Yahoo Finance's "most
-  active" screener, no key needed.
+  since the previous close. A glint of light crosses the tiles trading at an unusually
+  high volume for the time of day, and labels fade between ticker and percent change.
+  Config: `count`, `scale`, `unusual`. Data from Yahoo Finance's "most active"
+  screener, no key needed.
 - **Volume Profile** (`apps/volume_profile.star`): cycles through `tickers`. Each one
-  shows the day's price line next to a sideways histogram of the volume traded at each
-  price: the busiest price in amber, the band holding 70% of the volume in bright blue.
-  The header has the change since the previous close and the volume pace against the
-  same point of the day over the past month.
-- **Movers** (`apps/movers.star`): the day's top three gainers and top three losers
-  among US stocks worth over $2 billion, each with a small price line drawn from the
-  previous close and the percent change. An amber bar marks twice the usual volume.
+  shows the day's price as a glowing area chart next to a sideways histogram of the
+  volume traded at each price, from deep blue (little) to cyan (a lot), with the
+  busiest price in amber. The header has the change since the previous close and the
+  volume pace against the same point of the day over the past month.
+- **Sectors** (`apps/sectors.star`): what is moving, by sector. The eleven S&P 500
+  sectors as bars sorted from strongest to weakest, with the S&P 500 as a dotted line
+  and an amber tip on sectors trading at unusually high volume. A highlight walks
+  along the bars while the header names each sector, its change and its volume pace.
+  Data from Yahoo Finance's chart API for the sector SPDR funds.
 - **Hello World** (`apps/hello_world.star`): the smallest possible example.
 
 ## How it works
