@@ -136,7 +136,7 @@ def lambda_handler(event, context):
             if os.environ.get("DRY_RUN") == "1":
                 results[app["id"]] = f"rendered {len(image)} bytes"
             else:
-                results[app["id"]] = f"pushed (HTTP {push(app['id'], image)})"
+                results[app["id"]] = f"pushed {len(image)} bytes (HTTP {push(app['id'], image)})"
         except Exception as e:  # keep going so one broken app doesn't block the rest
             results[app["id"]] = f"error: {e}"
             failed.append(app["id"])
