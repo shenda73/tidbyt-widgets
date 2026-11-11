@@ -11,10 +11,11 @@ that widget's slot in the rotation without interrupting what's on screen.
 
 ## Widgets
 
-- **Sun Arc** (`apps/sun_arc.star`): the sun moves along an arc from sunrise to
-  sunset, and a moon takes over at night. The sky color follows the time of day,
-  clouds drift by during the day, and stars twinkle at night. Shows sunrise and sunset
-  times and how long is left. Config: `lat`, `lng`, `tz`.
+- **Sun Arc** (`apps/sun_arc.star`): an abstract view of the day. A plain disc for
+  the sun moves along a thin arc from sunrise to sunset over flat bands of sky color,
+  with rings rippling out from it. At night it becomes a hollow ring for the moon. The
+  palette follows the time of day. Shows sunrise and sunset times and how long is left.
+  Config: `lat`, `lng`, `tz`.
 - **Flights Overhead** (`apps/flights_overhead.star`): a radar scope with live ADS-B
   aircraft near you, cycling through the nearest planes and helicopters. Data comes
   from airplanes.live (falling back to adsb.lol), both free with no key. Config: `lat`,
