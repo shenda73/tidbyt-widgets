@@ -12,6 +12,12 @@ What has already alerted is kept in one SSM parameter (ALERT_PARAM, default
 
 Tickers are "SYMBOL[:Label[:Step]]", comma-separated, e.g.
 "^GSPC:S&P:1,TSLA,SPCX::5". Prices come from Yahoo Finance's chart API.
+
+Something that trades around the clock, like BTC-USD, can be watched too. Its
+day runs from midnight to midnight UTC, so its change is counted from the
+price at midnight UTC. To keep it from lighting up the Tidbyt at night, set
+`hours` (e.g. "8-22" for 8:00 to 22:00, in `tz`): outside those hours nothing
+is checked, and a move made overnight alerts when the hours start.
 """
 
 import datetime
@@ -44,6 +50,18 @@ def _load_state(ssm):
 
 def _save_state(ssm, state):
     ssm.put_parameter(Name=_param(), Value=json.dumps(state), Type="String", Overwrite=True)
+
+
+def awake(config, now=None):
+    """Whether now falls inside the alert hours ("8-22": from 8:00 to 22:00)."""
+    hours = config.get("hours")
+    if not hours:
+        return True
+    start, end = (int(h) for h in hours.split("-"))
+    now = now or datetime.datetime.now(ZoneInfo(config.get("tz", "America/New_York")))
+    if start <= end:
+        return start <= now.hour < end
+    return now.hour >= start or now.hour < end  # e.g. "20-2", past midnight
 
 
 def parse_tickers(text, default_step):
@@ -85,6 +103,9 @@ def check(config, force=False):
     """Alerts due now, as data for apps/stock_alert.star. With force, every
     ticker alerts and nothing is remembered (for previews and tests)."""
     tickers = parse_tickers(config.get("tickers", DEFAULT_TICKERS), float(config.get("step", "3")))
+
+    if not force and not awake(config):
+        return []
 
     ssm, state = None, {}
     if not force:

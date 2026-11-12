@@ -69,7 +69,10 @@ that widget's slot in the rotation without interrupting what's on screen.
   (`lambda/alerts.py`) and pushes it to the front of the Tidbyt when a ticker's change
   since the previous close crosses a new multiple of its step (with a step of 3: at
   ±3%, ±6%, ±9%), once per level per day. Set `tickers` as `SYMBOL[:Label[:Step]]`
-  (default `^GSPC:S&P:1,TSLA,SPCX`) and the default `step`. To see it now:
+  (default `^GSPC:S&P:1,TSLA,SPCX`) and the default `step`. Bitcoin is watched too
+  (`BTC-USD:BTC`), counted from the price at midnight UTC; because it trades around
+  the clock, `hours` (`8-22`, in `tz`) keeps alerts to the daytime, and a move made
+  overnight alerts at 8:00. To see it now:
   `aws lambda invoke --function-name tidbyt-widgets --cli-binary-format raw-in-base64-out --payload '{"apps":["alert"],"alert_test":true}' /dev/stdout`
 - **Hello World** (`apps/hello_world.star`): the smallest possible example.
 

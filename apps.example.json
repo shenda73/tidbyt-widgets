@@ -64,8 +64,10 @@
       "every": 1,
       "source": "stock_alerts",
       "config": {
-        "tickers": "^GSPC:S&P:1,TSLA,SPCX",
+        "tickers": "^GSPC:S&P:1,TSLA,SPCX,BTC-USD:BTC",
         "step": "3",
+        "hours": "8-22",
+        "tz": "America/New_York",
         "seconds": "7"
       }
     },
