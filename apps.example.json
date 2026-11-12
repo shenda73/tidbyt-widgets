@@ -51,6 +51,14 @@
       "every": 5
     },
     {
+      "id": "btc",
+      "file": "btc.star",
+      "every": 1,
+      "config": {
+        "seconds": "5"
+      }
+    },
+    {
       "id": "alert",
       "file": "stock_alert.star",
       "every": 1,

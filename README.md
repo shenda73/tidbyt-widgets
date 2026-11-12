@@ -9,9 +9,13 @@ that widget's slot in the rotation without interrupting what's on screen.
 |---|---|---|---|
 | ![](docs/sun_arc_day.gif) | ![](docs/sun_arc_night.gif) | ![](docs/flights_overhead.gif) | ![](docs/hello_world.gif) |
 
-| Stock Watch | Sectors | Stock Alert | Market Map |
+| Stock Watch | Sectors | Bitcoin | Stock Alert |
 |---|---|---|---|
-| ![](docs/stock_watch.gif) | ![](docs/sectors.gif) | ![](docs/stock_alert.gif) | ![](docs/market_map.gif) |
+| ![](docs/stock_watch.gif) | ![](docs/sectors.gif) | ![](docs/btc.gif) | ![](docs/stock_alert.gif) |
+
+| Market Map |
+|---|
+| ![](docs/market_map.gif) |
 
 ## Widgets
 
@@ -52,6 +56,14 @@ that widget's slot in the rotation without interrupting what's on screen.
   and an amber tip on sectors trading at unusually high volume. A highlight walks
   along the bars while the header names each sector, its change and its volume pace.
   Data from Yahoo Finance's chart API for the sector SPDR funds.
+- **Bitcoin** (`apps/btc.star`): the price of one bitcoin and where it has been. The
+  chart opens on the last 24 hours, then zooms out to the last 7 days and the last 30
+  days: the right edge is always now, so each zoom squeezes the chart you were looking
+  at to the right while the earlier days slide in. The percentage is the change over
+  the span on screen and rolls as the chart zooms; the line is green or red to match,
+  and the dotted line is the price at the start of the span. Set `seconds` per span.
+  Data from Coinbase's public market data API, no key needed, with Yahoo Finance as a
+  fallback.
 - **Stock Alert** (`apps/stock_alert.star`): a full-screen alert when a watched ticker
   makes a big move. It is not in the rotation: the Lambda checks prices every minute
   (`lambda/alerts.py`) and pushes it to the front of the Tidbyt when a ticker's change
