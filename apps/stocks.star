@@ -21,7 +21,8 @@ feed for a stock is stale, the price and the line come from Nasdaq's instead.
 Config (all optional):
   tickers  comma-separated Yahoo symbols, each optionally "SYMBOL:Label",
            e.g. "^GSPC:S&P,TSLA,SPCX". Default is S&P 500, Tesla, SpaceX.
-  seconds  seconds on screen per ticker (default 5)
+  seconds  seconds on screen per ticker (default 4, so three tickers
+           fit in one Tidbyt turn)
 """
 
 load("http.star", "http")
@@ -426,7 +427,7 @@ def ticker_frames(label, s, n):
     return frames
 
 def main(config):
-    seconds = int(config.get("seconds", "5"))
+    seconds = int(config.get("seconds", "4"))
     n = max(DRAW_FRAMES + 16, seconds * 1000 // DELAY_MS)
 
     frames = []
