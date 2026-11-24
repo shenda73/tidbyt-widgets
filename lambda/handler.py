@@ -33,6 +33,7 @@ import os
 import shutil
 import subprocess
 import time
+import urllib.error
 import urllib.request
 
 import boto3
@@ -45,8 +46,13 @@ APPS_DIR = os.path.join(ROOT, "apps")
 TICK_MINUTES = 1  # must match the daytime schedule
 NIGHT_MINUTES = 10  # must match the overnight schedule
 PUSH_URL = "https://api.tidbyt.com/v0/devices/{}/push"
+INSTALL_URL = "https://api.tidbyt.com/v0/devices/{}/installations/{}"
+# Widgets that were removed from apps.json. Their last image stays in the
+# Tidbyt rotation until the installation is deleted.
+RETIRED = ["volprofile", "movers"]
 
 _token = None
+_cleaned = False
 
 
 def get_token():
@@ -58,9 +64,37 @@ def get_token():
     return _token
 
 
-def load_apps():
+def load_all_apps():
     with open(os.path.join(ROOT, "apps.json")) as f:
-        return [a for a in json.load(f)["apps"] if a.get("enabled", True)]
+        return json.load(f)["apps"]
+
+
+def load_apps():
+    return [a for a in load_all_apps() if a.get("enabled", True)]
+
+
+def remove_stale():
+    """Delete the rotation slots of retired and disabled widgets, once per
+    container. Only IDs this project uses are touched."""
+    global _cleaned
+    if _cleaned:
+        return
+    _cleaned = True
+    ids = RETIRED + [a["id"] for a in load_all_apps() if not a.get("enabled", True)]
+    for app_id in ids:
+        req = urllib.request.Request(
+            INSTALL_URL.format(os.environ["DEVICE_ID"], app_id),
+            method="DELETE",
+            headers={"Authorization": f"Bearer {get_token()}"},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                print(f"removed installation {app_id} (HTTP {resp.status})")
+        except urllib.error.HTTPError as e:
+            if e.code != 404:
+                print(f"could not remove installation {app_id}: HTTP {e.code}")
+        except Exception as e:
+            print(f"could not remove installation {app_id}: {e}")
 
 
 def is_due(app, now, night=False):
@@ -143,6 +177,8 @@ def lambda_handler(event, context):
         selected = [a for a in apps if is_due(a, now, night)]
 
     dry = os.environ.get("DRY_RUN") == "1"
+    if not dry:
+        remove_stale()
     results, failed = {}, []
     for app in selected:
         try:

@@ -36,7 +36,7 @@
       "every": 1,
       "config": {
         "tickers": "^GSPC:S&P,TSLA,SPCX",
-        "seconds": "5"
+        "seconds": "4"
       }
     },
     {
