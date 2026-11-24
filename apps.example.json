@@ -62,6 +62,7 @@
       "id": "alert",
       "file": "stock_alert.star",
       "every": 1,
+      "enabled": false,
       "source": "stock_alerts",
       "config": {
         "tickers": "^GSPC:S&P:1,TSLA,SPCX,BTC-USD:BTC",
